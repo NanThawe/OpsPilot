@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.auth import router as auth_router
 from app.db.session import get_engine
 
 app = FastAPI(
@@ -9,6 +10,7 @@ app = FastAPI(
     description="AI-powered procurement and operations copilot",
     version="0.1.0",
 )
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["System"])

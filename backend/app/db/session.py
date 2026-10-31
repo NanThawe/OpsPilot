@@ -1,6 +1,8 @@
+from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 
@@ -14,3 +16,7 @@ def get_engine() -> Engine:
         settings.database_url,
         pool_pre_ping=True,
     )
+
+def get_db() -> Iterator[Session]:
+    with Session(get_engine()) as session:
+        yield session

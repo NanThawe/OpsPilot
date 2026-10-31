@@ -4,7 +4,11 @@ backend/app/main.py
 backend/app/core/__init__.py
 backend/app/core/config.py
 backend/app/db/__init__.py
+backend/app/db/base.py
+backend/app/db/models.py
 backend/app/db/session.py
+backend/migrations/env.py
+backend/migrations/versions/e6478c120fbd_create_departments_and_users.py
 backend/opspilot.egg-info/PKG-INFO
 backend/opspilot.egg-info/SOURCES.txt
 backend/opspilot.egg-info/dependency_links.txt
@@ -12,3 +16,4 @@ backend/opspilot.egg-info/requires.txt
 backend/opspilot.egg-info/top_level.txt
 backend/tests/test_database.py
 backend/tests/test_health.py
+backend/tests/test_models.py
