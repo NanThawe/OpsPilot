@@ -1,4 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.db.session import get_engine
 
 app = FastAPI(
     title="OpsPilot API",
@@ -13,4 +17,23 @@ def health_check() -> dict[str, str]:
     return {
         "status": "ok",
         "service": "opspilot-api",
+    }
+
+@app.get("/db-health", tags=["System"])
+def database_health_check() -> dict[str, str]:
+    """Verify connectivity to PostgreSQL."""
+
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        ) from exc
+
+    return {
+        "status": "ok",
+        "database": "connected",
     }
