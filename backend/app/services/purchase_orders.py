@@ -144,6 +144,20 @@ def extract_purchase_order(
         raise PurchaseOrderServiceError(
             "Local purchase order extraction failed"
         ) from exc
+    parsed_items = []
+
+    for page in pages:
+        parsed_items.extend(
+            parse_flattened_ordered_items(
+                page.text,
+                page.page_number,
+            )
+        )
+
+    # Prefer validated rows reconstructed directly
+    # from the source text when available.
+    if parsed_items:
+        proposal.line_items = parsed_items
 
     valid_pages = {page.page_number for page in pages}
 
@@ -188,6 +202,68 @@ def _number(value: str | None) -> Decimal | None:
         return None
 
     return number
+
+#works only for the synthetic purchase order layout used in the MVP demo. It is not a general-purpose parser for arbitrary purchase orders.
+def parse_flattened_ordered_items(
+    text: str,
+    page_number: int,
+) -> list[PurchaseOrderLine]:
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    labels = [line.casefold() for line in lines]
+
+    if "ordered items" not in labels:
+        return []
+
+    start = labels.index("ordered items")
+
+    try:
+        header_end = labels.index("amount", start + 1)
+        table_end = labels.index("subtotal", header_end + 1)
+    except ValueError:
+        return []
+
+    values = lines[header_end + 1 : table_end]
+
+    # This layout has five values per item:
+    # code, description, quantity, unit price, line total.
+    if not values or len(values) % 5 != 0:
+        return []
+
+    items = []
+
+    for index in range(0, len(values), 5):
+        code, description, quantity, unit_price, total = (
+            values[index : index + 5]
+        )
+
+        qty = _number(quantity)
+        price = _number(unit_price)
+        printed_total = _number(total)
+
+        if (
+            qty is None
+            or qty <= 0
+            or price is None
+            or printed_total is None
+        ):
+            return []
+
+        items.append(
+            PurchaseOrderLine(
+                description=f"{code}: {description}",
+                quantity=quantity,
+                unit_price=unit_price,
+                printed_line_total=total,
+                page_number=page_number,
+            )
+        )
+
+    return items
 
 
 def _money(value: Decimal) -> str:

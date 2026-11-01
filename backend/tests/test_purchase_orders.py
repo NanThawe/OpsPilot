@@ -133,3 +133,65 @@ def test_ollama_extracts_structured_purchase_order(monkeypatch):
     assert captured["format"] == (
         PurchaseOrderProposal.model_json_schema()
     )
+
+from app.services.purchase_orders import (
+    parse_flattened_ordered_items,
+)
+
+
+def test_po003_discrepancy_from_pdf_text():
+    text = """
+ORDERED ITEMS
+ITEM CODE
+DESCRIPTION
+QTY
+UNIT (SGD)
+AMOUNT
+SAFE-HELM
+Protective safety helmet
+20
+36.00
+720.00
+SAFE-VEST
+High-visibility vest
+25
+18.00
+450.00
+SAFE-GLVE
+Safety gloves (box)
+12
+27.50
+330.00
+Subtotal
+1,500.00
+GST (9%)
+135.00
+TOTAL PAYABLE (SGD)
+1,625.00
+"""
+
+    items = parse_flattened_ordered_items(text, 1)
+
+    assert len(items) == 3
+
+    proposal = PurchaseOrderProposal(
+        po_number="PO-SYN-2026-003",
+        currency="SGD",
+        line_items=items,
+        subtotal="1500.00",
+        tax_amount="135.00",
+        total_amount="1625.00",
+        evidence_page_numbers=[1],
+    )
+
+    result = validate_purchase_order(proposal)
+
+    assert result.status == "flagged"
+    assert result.calculated_total == "1635.00"
+
+    assert any(
+        issue.code == "total_mismatch"
+        and issue.expected == "1635.00"
+        and issue.stated == "1625.00"
+        for issue in result.issues
+    )
