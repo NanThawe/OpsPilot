@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +14,8 @@ class Settings(BaseSettings):
         env_file=".env",
         extra="ignore",
     )
+    document_storage_dir: Path = Path("data/private_documents")
 
 
 settings = Settings()
+

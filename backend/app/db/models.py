@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -158,4 +159,14 @@ class Document(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+
+    size_bytes: Mapped[int | None] = mapped_column(
+    BigInteger,
+    nullable=True,
+    )
+
+    sha256: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
     )
