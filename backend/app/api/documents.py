@@ -45,6 +45,9 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     size_bytes: int | None
     sha256: str | None
+    extraction_status: str
+    page_count: int | None
+    extracted_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 

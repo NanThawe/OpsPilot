@@ -9,7 +9,9 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     String,
+    Text,
     Uuid,
     func,
     text,
@@ -169,4 +171,44 @@ class Document(Base):
     sha256: Mapped[str | None] = mapped_column(
         String(64),
         nullable=True,
+    )
+
+    extraction_status: Mapped[str] = mapped_column(
+    String(20),
+    nullable=False,
+    default="pending",
+    server_default="pending",
+    )
+
+    extraction_error: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    page_count: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    extracted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+class DocumentPage(Base):
+    __tablename__ = "document_pages"
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    page_number: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
     )
