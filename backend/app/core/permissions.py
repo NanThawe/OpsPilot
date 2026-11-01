@@ -2,9 +2,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy import or_, true
 
 from app.core.dependencies import get_current_user
-from app.db.models import User
+from app.db.models import Document, User
 
 
 def require_roles(*allowed_roles: str):
@@ -38,3 +39,17 @@ def enforce_department_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",
         )
+
+def document_access_filter(current_user: User):
+    """
+    Return a database filter for documents
+    the current user is allowed to view.
+    """
+
+    if current_user.role == "admin":
+        return true()
+
+    return or_(
+        Document.department_id == current_user.department_id,
+        Document.visibility == "company",
+    )

@@ -92,3 +92,70 @@ class User(Base):
     department: Mapped[Department] = relationship(
         back_populates="users",
     )
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    __table_args__ = (
+        CheckConstraint(
+            "visibility IN ('department', 'company')",
+            name="ck_documents_visibility",
+        ),
+        CheckConstraint(
+            "status IN ('pending_upload', 'processing', 'ready', 'failed')",
+            name="ck_documents_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    original_filename: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    department_id: Mapped[UUID] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=False,
+        index=True,
+    )
+
+    created_by_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="department",
+        server_default="department",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending_upload",
+        server_default="pending_upload",
+    )
+
+    storage_key: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
