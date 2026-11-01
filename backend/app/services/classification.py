@@ -77,12 +77,19 @@ def validate_proposal(
             "AI returned invalid page references"
         )
 
-    rationale = proposal.rationale.strip()
+        # Normalise whitespace in the AI explanation.
+    rationale = " ".join(proposal.rationale.split())
 
-    if not rationale or len(rationale) > 500:
+    if not rationale:
         raise ClassificationServiceError(
-            "AI returned an invalid rationale"
+            "AI returned an empty rationale"
         )
+
+    # Keep explanations within the database/API limit.
+    if len(rationale) > 500:
+        rationale = rationale[:497].rstrip() + "..."
+
+    proposal.rationale = rationale
 
 
 def classify_pages(

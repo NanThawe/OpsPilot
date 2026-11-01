@@ -8,12 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.core.permissions import document_access_filter
 from app.db.models import (
     Document,
     DocumentClassification,
     DocumentPage,
+    PurchaseOrderExtraction,
     User,
 )
 from app.db.session import get_db
@@ -23,6 +25,12 @@ from app.services.classification import (
     classification_model_name,
     classify_pages,
     validate_proposal,
+)
+from app.services.purchase_orders import (
+    PurchaseOrderResponse,
+    PurchaseOrderServiceError,
+    extract_purchase_order,
+    validate_purchase_order,
 )
 
 router = APIRouter(
@@ -263,3 +271,141 @@ def review_classification(
     db.refresh(classification)
 
     return classification
+
+def purchase_order_response(
+    record: PurchaseOrderExtraction,
+) -> dict:
+    return {
+        "document_id": record.document_id,
+        "extraction": record.extracted_data,
+        "validation": record.validation_report,
+        "model_name": record.model_name,
+        "created_at": record.created_at,
+    }
+
+
+@router.post(
+    "/{document_id}/purchase-order/extract",
+    response_model=PurchaseOrderResponse,
+    status_code=201,
+    tags=["Purchase Orders"],
+)
+def extract_purchase_order_endpoint(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.get(Document, document_id)
+
+    # Only the document creator or an admin may initiate extraction.
+    # Return 404 to avoid revealing inaccessible document IDs.
+    if document is None or (
+        user.role != "admin"
+        and document.created_by_id != user.id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if (
+        document.status != "ready"
+        or document.extraction_status != "completed"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="PDF text extraction must be completed first",
+        )
+
+    classification = db.get(
+        DocumentClassification,
+        document_id,
+    )
+
+    if (
+        classification is None
+        or classification.predicted_type != "purchase_order"
+        or classification.review_status != "approved"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="An approved purchase order classification is required",
+        )
+
+    existing = db.get(PurchaseOrderExtraction, document_id)
+
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Purchase order extraction already exists",
+        )
+
+    pages = db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_id == document_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
+
+    if not pages:
+        raise HTTPException(
+            status_code=409,
+            detail="No extracted PDF pages found",
+        )
+
+    try:
+        proposal = extract_purchase_order(pages)
+    except PurchaseOrderServiceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    validation = validate_purchase_order(proposal)
+
+    record = PurchaseOrderExtraction(
+        document_id=document_id,
+        extracted_data=proposal.model_dump(),
+        validation_report=validation.model_dump(),
+        validation_status=validation.status,
+        model_name=f"ollama:{settings.ollama_model}",
+    )
+
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return purchase_order_response(record)
+
+
+@router.get(
+    "/{document_id}/purchase-order",
+    response_model=PurchaseOrderResponse,
+    tags=["Purchase Orders"],
+)
+def get_purchase_order_endpoint(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            document_access_filter(user),
+        )
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    record = db.get(PurchaseOrderExtraction, document_id)
+
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Purchase order extraction not found",
+        )
+
+    return purchase_order_response(record)

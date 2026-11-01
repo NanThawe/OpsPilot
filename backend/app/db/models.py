@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -210,5 +211,100 @@ class DocumentPage(Base):
 
     text: Mapped[str] = mapped_column(
         Text,
+        nullable=False,
+    )
+
+class DocumentClassification(Base):
+    __tablename__ = "document_classifications"
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    predicted_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    confidence: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+
+    rationale: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    evidence_page_numbers: Mapped[list[int]] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    model_name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    review_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending_review",
+        server_default="pending_review",
+    )
+
+    reviewed_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    review_note: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+class PurchaseOrderExtraction(Base):
+    __tablename__ = "purchase_order_extractions"
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    extracted_data: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    validation_report: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    validation_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    model_name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False,
     )
