@@ -321,3 +321,150 @@ th {
     padding: 16px;
   }
 }
+
+.upload-panel,
+.detail-panel {
+  margin-bottom: 24px;
+}
+
+.upload-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.upload-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.upload-form input {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #d7dfeb;
+  border-radius: 9px;
+}
+
+.upload-form .primary-button {
+  margin: 0;
+}
+
+.document-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2449d8;
+  font-weight: 700;
+  text-align: left;
+}
+
+.document-link:hover {
+  text-decoration: underline;
+}
+
+.document-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 20px 0;
+  color: #718096;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.action-row .primary-button {
+  margin: 0;
+}
+
+.detail-section {
+  padding: 24px 0;
+  border-top: 1px solid #edf0f6;
+}
+
+.detail-section h3 {
+  margin: 0 0 18px;
+  font-size: 17px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  font-size: 13px;
+}
+
+.info-grid p {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  padding: 14px;
+  background: #fff8e5;
+  border-radius: 8px;
+  color: #8a6517;
+  font-size: 13px;
+}
+
+.validation-issues {
+  margin-top: 24px;
+}
+
+.issue {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid #f3cccc;
+  border-radius: 9px;
+  background: #fff6f6;
+  font-size: 13px;
+}
+
+.issue p {
+  margin-bottom: 0;
+}
+
+details {
+  padding: 14px 0;
+  border-bottom: 1px solid #edf0f6;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.source-ref {
+  color: #718096;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.page-text {
+  max-height: 400px;
+  overflow: auto;
+  padding: 18px;
+  background: #f4f7fb;
+  border-radius: 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 850px) {
+  .upload-form,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}

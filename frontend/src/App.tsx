@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-
+import { UploadDocument } from "./components/UploadDocument";
+import { DocumentDetail } from "./components/DocumentDetail";
 import {
   fetchDocuments,
   fetchProfile,
@@ -9,6 +10,7 @@ import {
 } from "./api";
 
 import "./App.css";
+
 
 type Session = {
   token: string;
@@ -48,6 +50,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [selectedDocumentId, setSelectedDocumentId] =
+  useState<string | null>(null);
 
   async function loadDocuments(token: string) {
     setDocumentsLoading(true);
@@ -100,6 +104,7 @@ function App() {
     setDocuments([]);
     setPassword("");
     setError(null);
+    setSelectedDocumentId(null);
   }
 
   if (!session) {
@@ -178,6 +183,11 @@ function App() {
       document.extraction_status === "completed",
   ).length;
 
+  const selectedDocument =
+  documents.find(
+    (document) => document.id === selectedDocumentId,
+  ) ?? null;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -249,6 +259,22 @@ function App() {
           </article>
         </section>
 
+        <UploadDocument
+          token={session.token}
+          onUploaded={() => loadDocuments(session.token)}
+        />
+
+        {selectedDocument && (
+          <DocumentDetail
+            key={selectedDocument.id}
+            token={session.token}
+            user={session.user}
+            document={selectedDocument}
+            onUpdated={() => loadDocuments(session.token)}
+            onClose={() => setSelectedDocumentId(null)}
+          />
+        )}
+
         <section className="document-panel">
           <div className="panel-heading">
             <div>
@@ -300,9 +326,13 @@ function App() {
                   {documents.map((document) => (
                     <tr key={document.id}>
                       <td>
-                        <div className="document-title">
+                        <button
+                          type="button"
+                          className="document-link"
+                          onClick={() => setSelectedDocumentId(document.id)}
+                        >
                           {document.title}
-                        </div>
+                        </button>
 
                         <div className="document-filename">
                           {document.original_filename}
