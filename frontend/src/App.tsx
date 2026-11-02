@@ -99,7 +99,29 @@ function App() {
       setBusy(false);
     }
   }
+  function openDocumentFromSearch(documentId: string) {
+  const exists = documents.some(
+    (item) => item.id === documentId,
+  );
 
+  if (!exists) {
+    setError(
+      "This document is not in the current list. Refresh documents and try again.",
+    );
+    return;
+  }
+
+  setSelectedDocumentId(documentId);
+
+  window.requestAnimationFrame(() => {
+    document
+      .getElementById("selected-document")
+      ?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+  });
+}
   function handleLogout() {
     setSession(null);
     setDocuments([]);
@@ -267,14 +289,16 @@ function App() {
         />
 
         {selectedDocument && (
-          <DocumentDetail
-            key={selectedDocument.id}
-            token={session.token}
-            user={session.user}
-            document={selectedDocument}
-            onUpdated={() => loadDocuments(session.token)}
-            onClose={() => setSelectedDocumentId(null)}
-          />
+          <div id="selected-document">
+            <DocumentDetail
+              key={selectedDocument.id}
+              token={session.token}
+              user={session.user}
+              document={selectedDocument}
+              onUpdated={() => loadDocuments(session.token)}
+              onClose={() => setSelectedDocumentId(null)}
+            />
+          </div>
         )}
 
         <section className="document-panel">
@@ -363,7 +387,10 @@ function App() {
             </div>
           )}
         </section>
-        <KnowledgeSearch token={session.token} />
+        <KnowledgeSearch
+          token={session.token}
+          onOpenDocument={openDocumentFromSearch}
+        />
       </main>
     </div>
   );

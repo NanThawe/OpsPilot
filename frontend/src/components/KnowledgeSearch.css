@@ -110,3 +110,82 @@
     flex-direction: column;
   }
 }
+
+/* Search mode selector */
+
+.knowledge-search-modes {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.knowledge-mode {
+  padding: 0.65rem 1.25rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+}
+
+.knowledge-mode.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.knowledge-mode:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.knowledge-mode-description {
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+/* Semantic similarity */
+
+.knowledge-similarity {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Source navigation */
+
+.knowledge-result-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.knowledge-open-source {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #2563eb;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.knowledge-open-source:hover {
+  background: #eff6ff;
+}
+
+/* Search explanation */
+
+.knowledge-disclaimer {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}

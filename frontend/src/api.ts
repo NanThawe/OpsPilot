@@ -436,3 +436,38 @@ export async function searchKnowledge(
 
   return (await response.json()) as KnowledgeSearchHit[];
 }
+
+export type SemanticSearchHit = KnowledgeSearchHit & {
+  similarity: number;
+};
+
+export async function searchSemanticKnowledge(
+  token: string,
+  query: string,
+): Promise<SemanticSearchHit[]> {
+  const params = new URLSearchParams({
+    q: query.trim(),
+    limit: "10",
+  });
+
+  const response = await fetch(
+    `/api/knowledge/semantic-search?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Semantic search failed (HTTP ${response.status})`,
+    );
+  }
+
+  return (await response.json()) as SemanticSearchHit[];
+}
