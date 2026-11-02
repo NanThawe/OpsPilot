@@ -28,6 +28,11 @@ class PurchaseOrderLine(BaseModel):
     printed_line_total: str | None = None
     page_number: int
 
+class DeliveryMilestone(BaseModel):
+    name: str
+    due_date: str
+    deliverables: str
+    page_number: int
 
 class PurchaseOrderProposal(BaseModel):
     po_number: str | None = None
@@ -44,7 +49,52 @@ class PurchaseOrderProposal(BaseModel):
     total_amount: str | None = None
 
     evidence_page_numbers: list[int] = Field(default_factory=list)
+    delivery_milestones: list[DeliveryMilestone] = Field(
+    default_factory=list
+)
 
+def resolve_source_pages(
+    proposal: PurchaseOrderProposal,
+    pages: Sequence[DocumentPage],
+) -> PurchaseOrderProposal:
+    valid_pages = sorted(
+        {page.page_number for page in pages}
+    )
+
+    if not valid_pages:
+        raise PurchaseOrderServiceError(
+            "No source pages available"
+        )
+
+    # Document-level references come from the actual PDF pages.
+    proposal.evidence_page_numbers = valid_pages
+
+    for item in proposal.line_items:
+        if item.page_number in valid_pages:
+            continue
+
+        # Try to locate the item description in the source text.
+        description = (
+            item.description.split(":", 1)[-1]
+            .strip()
+            .casefold()
+        )
+
+        matching_pages = [
+            page.page_number
+            for page in pages
+            if description
+            and description in page.text.casefold()
+        ]
+
+        if len(matching_pages) == 1:
+            item.page_number = matching_pages[0]
+        else:
+            raise PurchaseOrderServiceError(
+                "Could not verify a line item's source page"
+            )
+
+    return proposal
 
 class ValidationIssue(BaseModel):
     code: str
@@ -108,7 +158,9 @@ def extract_purchase_order(
     pages: Sequence[DocumentPage],
 ) -> PurchaseOrderProposal:
     if not pages:
-        raise PurchaseOrderServiceError("No extracted document pages found")
+        raise PurchaseOrderServiceError(
+            "No extracted document pages found"
+        )
 
     document_text = "\n\n".join(
         f"[PAGE {page.page_number}]\n{page.text}"
@@ -148,47 +200,18 @@ def extract_purchase_order(
         raise PurchaseOrderServiceError(
             "Local purchase order extraction failed"
         ) from exc
-    parsed_items = []
 
-    for page in pages:
-        parsed_items.extend(
-            parse_flattened_ordered_items(
-                page.text,
-                page.page_number,
-            )
-        )
+    # Correct fields using the original PDF text.
+    proposal = reconcile_purchase_order_from_source(
+        proposal,
+        pages,
+    )
 
-    # Prefer validated rows reconstructed directly
-    # from the source text when available.
-    if parsed_items:
-        proposal.line_items = parsed_items
-
-    valid_pages = {page.page_number for page in pages}
-
-    if len(valid_pages) == 1:
-        # All extracted text comes from the same PDF page.
-        single_page = next(iter(valid_pages))
-
-        proposal.evidence_page_numbers = [single_page]
-
-        for item in proposal.line_items:
-            item.page_number = single_page
-
-    else:
-        # For multi-page PDFs, require valid source references.
-        if (
-            not proposal.evidence_page_numbers
-            or not set(proposal.evidence_page_numbers) <= valid_pages
-        ):
-            raise PurchaseOrderServiceError(
-                "AI returned invalid evidence page references"
-            )
-
-        for item in proposal.line_items:
-            if item.page_number not in valid_pages:
-                raise PurchaseOrderServiceError(
-                    "AI returned an invalid line item page reference"
-                )
+    # Verify page references against the actual document.
+    proposal = resolve_source_pages(
+        proposal,
+        pages,
+    )
 
     return proposal
 
@@ -269,6 +292,206 @@ def parse_flattened_ordered_items(
 
     return items
 
+def _lines(text: str) -> list[str]:
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+
+def _value_after_label(
+    lines: list[str],
+    label: str,
+    startswith: bool = False,
+) -> str | None:
+    for index, line in enumerate(lines[:-1]):
+        matches = (
+            line.casefold().startswith(label.casefold())
+            if startswith
+            else line.casefold() == label.casefold()
+        )
+
+        if matches:
+            return lines[index + 1]
+
+    return None
+
+
+def _source_amount(
+    lines: list[str],
+    label: str,
+    startswith: bool = False,
+) -> str | None:
+    raw = _value_after_label(
+        lines,
+        label,
+        startswith=startswith,
+    )
+
+    number = _number(raw)
+
+    if number is None:
+        return None
+
+    return _money(number)
+
+
+def _parse_delivery_milestones(
+    pages: Sequence[DocumentPage],
+) -> list[DeliveryMilestone]:
+    milestones = []
+
+    for page in pages:
+        lines = _lines(page.text)
+
+        if "STAGED DELIVERY SCHEDULE" not in lines:
+            continue
+
+        try:
+            start = lines.index("DELIVERABLES") + 1
+        except ValueError:
+            continue
+
+        try:
+            end = lines.index(
+                "DELIVERY LOCATION AND RECEIVING RULES",
+                start,
+            )
+        except ValueError:
+            end = len(lines)
+
+        index = start
+
+        while index < end:
+            if not lines[index].casefold().startswith("batch "):
+                index += 1
+                continue
+
+            if index + 1 >= end:
+                break
+
+            name = lines[index]
+            due_date = lines[index + 1]
+
+            next_index = index + 2
+            deliverables = []
+
+            while (
+                next_index < end
+                and not lines[next_index]
+                .casefold()
+                .startswith("batch ")
+            ):
+                deliverables.append(lines[next_index])
+                next_index += 1
+
+            if deliverables:
+                milestones.append(
+                    DeliveryMilestone(
+                        name=name,
+                        due_date=due_date,
+                        deliverables="; ".join(deliverables),
+                        page_number=page.page_number,
+                    )
+                )
+
+            index = next_index
+
+    return milestones
+
+
+def reconcile_purchase_order_from_source(
+    proposal: PurchaseOrderProposal,
+    pages: Sequence[DocumentPage],
+) -> PurchaseOrderProposal:
+    # Prefer the page containing the actual order table.
+    order_page = next(
+        (
+            page
+            for page in pages
+            if "ORDERED ITEMS" in page.text
+        ),
+        None,
+    )
+
+    if order_page is not None:
+        lines = _lines(order_page.text)
+
+        header_fields = {
+            "po_number": "PO NUMBER",
+            "buyer": "BUYER / BILL TO",
+            "vendor": "SUPPLIER",
+            "currency": "CURRENCY",
+        }
+
+        for field_name, label in header_fields.items():
+            value = _value_after_label(lines, label)
+
+            if value:
+                setattr(proposal, field_name, value)
+
+        amount_fields = {
+            "subtotal": "Subtotal",
+            "tax_amount": "GST",
+            "total_amount": "TOTAL PAYABLE",
+        }
+
+        for field_name, label in amount_fields.items():
+            value = _source_amount(
+                lines,
+                label,
+                startswith=(label != "Subtotal"),
+            )
+
+            if value is not None:
+                setattr(proposal, field_name, value)
+
+        # The PDF prints a negative discount.
+        # Our validator expects a positive amount to subtract.
+        raw_discount = _value_after_label(
+            lines,
+            "Volume discount",
+            startswith=True,
+        )
+
+        discount = _number(raw_discount)
+
+        if discount is not None:
+            proposal.discount_amount = _money(abs(discount))
+
+    # Recover item rows from the source instead of relying
+    # on the model's interpretation of flattened table text.
+    parsed_items = []
+
+    for page in pages:
+        parsed_items.extend(
+            parse_flattened_ordered_items(
+                page.text,
+                page.page_number,
+            )
+        )
+
+    if parsed_items:
+        proposal.line_items = parsed_items
+
+    # Capture the second page's staged deliveries.
+    parsed_milestones = _parse_delivery_milestones(pages)
+
+    if parsed_milestones:
+        proposal.delivery_milestones = parsed_milestones
+
+    # Reject obviously merged supplier fields when the
+    # source parser could not recover a clean value.
+    if proposal.vendor and (
+        len(proposal.vendor) > 160
+        or "supplier reference:" in proposal.vendor.casefold()
+    ):
+        raise PurchaseOrderServiceError(
+            "AI merged unrelated content into the supplier field"
+        )
+
+    return proposal
 
 def _money(value: Decimal) -> str:
     return str(value.quantize(CENT, rounding=ROUND_HALF_UP))
