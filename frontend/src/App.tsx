@@ -1,0 +1,339 @@
+import { useState, type FormEvent } from "react";
+
+import {
+  fetchDocuments,
+  fetchProfile,
+  login,
+  type ApiUser,
+  type DocumentRecord,
+} from "./api";
+
+import "./App.css";
+
+type Session = {
+  token: string;
+  user: ApiUser;
+};
+
+function formatStatus(value: string | null): string {
+  if (!value) {
+    return "Not started";
+  }
+
+  return value.replaceAll("_", " ");
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleDateString("en-SG", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function App() {
+  const [email, setEmail] = useState(
+    "operations@demo.local",
+  );
+
+  const [password, setPassword] = useState("");
+  const [session, setSession] = useState<Session | null>(null);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+
+  async function loadDocuments(token: string) {
+    setDocumentsLoading(true);
+
+    try {
+      const result = await fetchDocuments(token);
+      setDocuments(result);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load documents",
+      );
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const auth = await login(email.trim(), password);
+      const user = await fetchProfile(auth.access_token);
+
+      setSession({
+        token: auth.access_token,
+        user,
+      });
+
+      setPassword("");
+      await loadDocuments(auth.access_token);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Login failed",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleLogout() {
+    setSession(null);
+    setDocuments([]);
+    setPassword("");
+    setError(null);
+  }
+
+  if (!session) {
+    return (
+      <main className="login-page">
+        <section className="login-card">
+          <div className="brand-mark">OP</div>
+
+          <div className="eyebrow">
+            PROCUREMENT AND OPERATIONS
+          </div>
+
+          <h1>Welcome to OpsPilot</h1>
+
+          <p className="muted">
+            Your secure workspace for company documents,
+            procurement workflows and AI assistance.
+          </p>
+
+          <form onSubmit={handleLogin} className="login-form">
+            <label htmlFor="email">Work email</label>
+
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
+              autoComplete="username"
+              required
+            />
+
+            <label htmlFor="password">Password</label>
+
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
+              autoComplete="current-password"
+              required
+            />
+
+            {error && (
+              <p className="error-message" role="alert">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={busy}
+            >
+              {busy ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+
+          <p className="login-footer">
+            OpsPilot MVP · Internal operations platform
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  const readyCount = documents.filter(
+    (document) => document.status === "ready",
+  ).length;
+
+  const extractedCount = documents.filter(
+    (document) =>
+      document.extraction_status === "completed",
+  ).length;
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <span className="brand-mark small">OP</span>
+          <span>OpsPilot</span>
+        </div>
+
+        <div className="sidebar-section">WORKSPACE</div>
+
+        <div className="nav-item active">
+          Documents
+        </div>
+
+        <div className="sidebar-bottom">
+          <div className="account-email">
+            {session.user.email}
+          </div>
+
+          <div className="account-role">
+            {session.user.role}
+          </div>
+
+          <button
+            className="logout-button"
+            onClick={handleLogout}
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="page-header">
+          <div>
+            <div className="eyebrow">OPERATIONS WORKSPACE</div>
+            <h1>Document dashboard</h1>
+
+            <p className="muted">
+              View documents available to your account.
+            </p>
+          </div>
+
+          <div className="role-badge">
+            {session.user.role}
+          </div>
+        </header>
+
+        <section className="stats-grid">
+          <article className="stat-card">
+            <div className="stat-label">Visible documents</div>
+            <div className="stat-number">
+              {documents.length}
+            </div>
+          </article>
+
+          <article className="stat-card">
+            <div className="stat-label">Ready</div>
+            <div className="stat-number">
+              {readyCount}
+            </div>
+          </article>
+
+          <article className="stat-card">
+            <div className="stat-label">Text extracted</div>
+            <div className="stat-number">
+              {extractedCount}
+            </div>
+          </article>
+        </section>
+
+        <section className="document-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Company documents</h2>
+              <p className="muted">
+                Results follow your department permissions.
+              </p>
+            </div>
+
+            <button
+              className="secondary-button"
+              onClick={() => loadDocuments(session.token)}
+              disabled={documentsLoading}
+            >
+              {documentsLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+
+          {error && (
+            <p className="error-message" role="alert">
+              {error}
+            </p>
+          )}
+
+          {documentsLoading && (
+            <p className="muted">Loading documents...</p>
+          )}
+
+          {!documentsLoading && documents.length === 0 && (
+            <div className="empty-state">
+              No documents are available to this account.
+            </div>
+          )}
+
+          {!documentsLoading && documents.length > 0 && (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Document</th>
+                    <th>Status</th>
+                    <th>Text extraction</th>
+                    <th>Visibility</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {documents.map((document) => (
+                    <tr key={document.id}>
+                      <td>
+                        <div className="document-title">
+                          {document.title}
+                        </div>
+
+                        <div className="document-filename">
+                          {document.original_filename}
+                        </div>
+                      </td>
+
+                      <td>
+                        <span className="status-pill">
+                          {formatStatus(document.status)}
+                        </span>
+                      </td>
+
+                      <td>
+                        {formatStatus(
+                          document.extraction_status,
+                        )}
+                      </td>
+
+                      <td>{document.visibility}</td>
+
+                      <td>{formatDate(document.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default App;
