@@ -17,6 +17,7 @@ from app.db.models import (
     DocumentPage,
     PurchaseOrderExtraction,
     PurchaseOrderExtractionRevision,
+    PurchaseOrderReview,
     User,
 )
 from app.db.session import get_db
@@ -26,6 +27,12 @@ from app.services.classification import (
     classification_model_name,
     classify_pages,
     validate_proposal,
+)
+from app.services.purchase_order_reviews import (
+    PurchaseOrderReviewRequest,
+    PurchaseOrderReviewResponse,
+    can_approve_purchase_order,
+    reviewer_can_review,
 )
 from app.services.purchase_orders import (
     PurchaseOrderResponse,
@@ -543,6 +550,20 @@ def reprocess_purchase_order_endpoint(
         )
     )
 
+    existing_decision = db.get(
+        PurchaseOrderReview,
+        (document_id, latest_number or 1),
+    )
+
+    if (
+        existing_decision is not None
+        and existing_decision.decision in {"approved", "rejected"}
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Approved or rejected revisions cannot be reprocessed",
+        )
+
     if latest_number is None:
         # Preserve an extraction created before revision tracking existed.
         original_revision = PurchaseOrderExtractionRevision(
@@ -639,3 +660,152 @@ def get_purchase_order_history_endpoint(
             "created_by_id": None,
         }
     ]
+
+@router.post(
+    "/{document_id}/purchase-order/review",
+    response_model=PurchaseOrderReviewResponse,
+    status_code=201,
+    tags=["Purchase Order Reviews"],
+)
+def review_purchase_order_endpoint(
+    document_id: UUID,
+    payload: PurchaseOrderReviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.get(Document, document_id)
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if not reviewer_can_review(
+        user.role,
+        user.department_id,
+        document.department_id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review this department's purchase orders",
+        )
+
+    if user.id == document.created_by_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review your own purchase order",
+        )
+
+    # Lock the current extraction while deciding.
+    current = db.scalar(
+        select(PurchaseOrderExtraction)
+        .where(
+            PurchaseOrderExtraction.document_id == document_id
+        )
+        .with_for_update()
+    )
+
+    if current is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Purchase order has not been extracted",
+        )
+
+    latest_revision = db.scalar(
+        select(
+            func.max(
+                PurchaseOrderExtractionRevision.revision_number
+            )
+        ).where(
+            PurchaseOrderExtractionRevision.document_id == document_id
+        )
+    ) or 1
+
+    if payload.revision_number != latest_revision:
+        raise HTTPException(
+            status_code=409,
+            detail="This is not the latest extraction revision",
+        )
+
+    revision = db.get(
+        PurchaseOrderExtractionRevision,
+        (document_id, latest_revision),
+    )
+
+    if revision is not None and revision.created_by_id == user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You cannot review an extraction you initiated",
+        )
+
+    existing_review = db.get(
+        PurchaseOrderReview,
+        (document_id, latest_revision),
+    )
+
+    if existing_review is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This revision has already been reviewed",
+        )
+
+    if (
+        payload.decision == "approve"
+        and not can_approve_purchase_order(
+            current.validation_status
+        )
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Only purchase orders with passed validation can be approved",
+        )
+
+    decisions = {
+        "approve": "approved",
+        "reject": "rejected",
+        "request_changes": "changes_requested",
+    }
+
+    review = PurchaseOrderReview(
+        document_id=document_id,
+        revision_number=latest_revision,
+        decision=decisions[payload.decision],
+        note=payload.note,
+        reviewed_by_id=user.id,
+    )
+
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+
+    return review
+
+@router.get(
+    "/{document_id}/purchase-order/reviews",
+    response_model=list[PurchaseOrderReviewResponse],
+    tags=["Purchase Order Reviews"],
+)
+def get_purchase_order_reviews_endpoint(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            document_access_filter(user),
+        )
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    return db.scalars(
+        select(PurchaseOrderReview)
+        .where(PurchaseOrderReview.document_id == document_id)
+        .order_by(PurchaseOrderReview.revision_number)
+    ).all()

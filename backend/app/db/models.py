@@ -352,3 +352,37 @@ class PurchaseOrderExtractionRevision(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+class PurchaseOrderReview(Base):
+    __tablename__ = "purchase_order_reviews"
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+    revision_number: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    decision: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+    )
+
+    note: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    reviewed_by_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
