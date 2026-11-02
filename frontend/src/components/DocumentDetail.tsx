@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-
+import { ReviewPanel } from "./ReviewPanel";
 import {
   classifyDocument,
   extractDocumentText,
@@ -255,6 +255,7 @@ export function DocumentDetail({
                   {classification.rationale}
                 </p>
               </div>
+            
             ) : (
               <p className="muted">
                 No classification is available yet.
@@ -397,6 +398,17 @@ export function DocumentDetail({
               </details>
             ))}
           </div>
+          <ReviewPanel
+              token={token}
+              user={user}
+              document={document}
+              classification={classification}
+              purchaseOrder={purchaseOrder}
+              onReviewed={async () => {
+                await onUpdated();
+                await loadDetails();
+              }}
+            />
         </>
       )}
     </section>

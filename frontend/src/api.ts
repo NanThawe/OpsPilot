@@ -14,6 +14,7 @@ export type DocumentRecord = {
   extraction_status: string | null;
   visibility: string;
   created_at: string;
+  department_id: string;
 };
 
 type LoginResponse = {
@@ -292,6 +293,99 @@ export function fetchDocumentPages(
 ): Promise<DocumentPage[]> {
   return request<DocumentPage[]>(
     `/documents/${documentId}/pages`,
+    {
+      headers: authHeaders(token),
+    },
+  );
+}
+
+export type PurchaseOrderRevision =
+  PurchaseOrderResult & {
+    revision_number: number;
+    created_by_id: string | null;
+    created_at: string;
+  };
+
+export type PurchaseOrderReview = {
+  document_id: string;
+  revision_number: number;
+  decision: "approved" | "rejected" | "changes_requested";
+  note: string | null;
+  reviewed_by_id: string;
+  reviewed_at: string;
+};
+
+export type ClassificationDecision = "approve" | "reject";
+
+export type PurchaseOrderDecision =
+  | "approve"
+  | "reject"
+  | "request_changes";
+
+export async function submitClassificationReview(
+  token: string,
+  documentId: string,
+  decision: ClassificationDecision,
+  note: string,
+): Promise<unknown> {
+  return request<unknown>(
+    `/documents/${documentId}/classification/review`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        decision,
+        note: note.trim() || null,
+      }),
+    },
+  );
+}
+
+export async function submitPurchaseOrderReview(
+  token: string,
+  documentId: string,
+  revisionNumber: number,
+  decision: PurchaseOrderDecision,
+  note: string,
+): Promise<PurchaseOrderReview> {
+  return request<PurchaseOrderReview>(
+    `/documents/${documentId}/purchase-order/review`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        revision_number: revisionNumber,
+        decision,
+        note: note.trim() || null,
+      }),
+    },
+  );
+}
+
+export async function fetchPurchaseOrderHistory(
+  token: string,
+  documentId: string,
+): Promise<PurchaseOrderRevision[]> {
+  return request<PurchaseOrderRevision[]>(
+    `/documents/${documentId}/purchase-order/history`,
+    {
+      headers: authHeaders(token),
+    },
+  );
+}
+
+export async function fetchPurchaseOrderReviews(
+  token: string,
+  documentId: string,
+): Promise<PurchaseOrderReview[]> {
+  return request<PurchaseOrderReview[]>(
+    `/documents/${documentId}/purchase-order/reviews`,
     {
       headers: authHeaders(token),
     },
