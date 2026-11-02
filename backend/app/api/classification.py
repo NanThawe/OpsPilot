@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.db.models import (
     DocumentClassification,
     DocumentPage,
     PurchaseOrderExtraction,
+    PurchaseOrderExtractionRevision,
     User,
 )
 from app.db.session import get_db
@@ -28,6 +29,7 @@ from app.services.classification import (
 )
 from app.services.purchase_orders import (
     PurchaseOrderResponse,
+    PurchaseOrderRevisionResponse,
     PurchaseOrderServiceError,
     extract_purchase_order,
     validate_purchase_order,
@@ -370,7 +372,17 @@ def extract_purchase_order_endpoint(
         model_name=f"ollama:{settings.ollama_model}",
     )
 
-    db.add(record)
+    first_revision = PurchaseOrderExtractionRevision(
+        document_id=document_id,
+        revision_number=1,
+        extracted_data=proposal.model_dump(),
+        validation_report=validation.model_dump(),
+        validation_status=validation.status,
+        model_name=f"ollama:{settings.ollama_model}",
+        created_by_id=user.id,
+    )
+
+    db.add_all([record, first_revision])
     db.commit()
     db.refresh(record)
 
@@ -409,3 +421,221 @@ def get_purchase_order_endpoint(
         )
 
     return purchase_order_response(record)
+
+def purchase_order_revision_response(
+    revision: PurchaseOrderExtractionRevision,
+) -> dict:
+    return {
+        "document_id": revision.document_id,
+        "extraction": revision.extracted_data,
+        "validation": revision.validation_report,
+        "model_name": revision.model_name,
+        "created_at": revision.created_at,
+        "revision_number": revision.revision_number,
+        "created_by_id": revision.created_by_id,
+    }
+
+@router.post(
+    "/{document_id}/purchase-order/reprocess",
+    response_model=PurchaseOrderRevisionResponse,
+    status_code=201,
+    tags=["Purchase Orders"],
+)
+def reprocess_purchase_order_endpoint(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.get(Document, document_id)
+
+    if document is None or (
+        user.role != "admin"
+        and document.created_by_id != user.id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    if (
+        document.status != "ready"
+        or document.extraction_status != "completed"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="PDF text extraction must be completed first",
+        )
+
+    classification = db.get(
+        DocumentClassification,
+        document_id,
+    )
+
+    if (
+        classification is None
+        or classification.predicted_type != "purchase_order"
+        or classification.review_status != "approved"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Approved purchase order classification required",
+        )
+
+    existing = db.get(PurchaseOrderExtraction, document_id)
+
+    if existing is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No existing extraction. Use the extract endpoint first",
+        )
+
+    if existing.validation_status not in {"needs_review", "flagged"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Only incomplete or flagged extractions can be retried",
+        )
+
+    pages = db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_id == document_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
+
+    if not pages:
+        raise HTTPException(
+            status_code=409,
+            detail="No extracted document pages found",
+        )
+
+    try:
+        proposal = extract_purchase_order(pages)
+    except PurchaseOrderServiceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    validation = validate_purchase_order(proposal)
+
+    # Acquire the row lock only after the Ollama request finishes.
+    current = db.scalar(
+        select(PurchaseOrderExtraction)
+        .where(PurchaseOrderExtraction.document_id == document_id)
+        .with_for_update()
+    )
+
+    if current is None or current.validation_status not in {
+        "needs_review",
+        "flagged",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail="Extraction is no longer eligible for reprocessing",
+        )
+
+    latest_number = db.scalar(
+        select(
+            func.max(
+                PurchaseOrderExtractionRevision.revision_number
+            )
+        ).where(
+            PurchaseOrderExtractionRevision.document_id == document_id
+        )
+    )
+
+    if latest_number is None:
+        # Preserve an extraction created before revision tracking existed.
+        original_revision = PurchaseOrderExtractionRevision(
+            document_id=document_id,
+            revision_number=1,
+            extracted_data=current.extracted_data,
+            validation_report=current.validation_report,
+            validation_status=current.validation_status,
+            model_name=current.model_name,
+            created_by_id=None,
+            created_at=current.created_at,
+        )
+
+        db.add(original_revision)
+        latest_number = 1
+
+    new_revision = PurchaseOrderExtractionRevision(
+        document_id=document_id,
+        revision_number=latest_number + 1,
+        extracted_data=proposal.model_dump(),
+        validation_report=validation.model_dump(),
+        validation_status=validation.status,
+        model_name=f"ollama:{settings.ollama_model}",
+        created_by_id=user.id,
+    )
+
+    db.add(new_revision)
+
+    # Replace the latest-result fields, not the historical revision.
+    current.extracted_data = proposal.model_dump()
+    current.validation_report = validation.model_dump()
+    current.validation_status = validation.status
+    current.model_name = f"ollama:{settings.ollama_model}"
+
+    db.commit()
+    db.refresh(new_revision)
+
+    return purchase_order_revision_response(new_revision)
+
+@router.get(
+    "/{document_id}/purchase-order/history",
+    response_model=list[PurchaseOrderRevisionResponse],
+    tags=["Purchase Orders"],
+)
+def get_purchase_order_history_endpoint(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            document_access_filter(user),
+        )
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    revisions = db.scalars(
+        select(PurchaseOrderExtractionRevision)
+        .where(
+            PurchaseOrderExtractionRevision.document_id == document_id
+        )
+        .order_by(PurchaseOrderExtractionRevision.revision_number)
+    ).all()
+
+    if revisions:
+        return [
+            purchase_order_revision_response(revision)
+            for revision in revisions
+        ]
+
+    # Compatibility for records created before Step 12.
+    existing = db.get(PurchaseOrderExtraction, document_id)
+
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Purchase order extraction not found",
+        )
+
+    return [
+        {
+            "document_id": existing.document_id,
+            "extraction": existing.extracted_data,
+            "validation": existing.validation_report,
+            "model_name": existing.model_name,
+            "created_at": existing.created_at,
+            "revision_number": 1,
+            "created_by_id": None,
+        }
+    ]

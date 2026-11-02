@@ -308,3 +308,47 @@ class PurchaseOrderExtraction(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+class PurchaseOrderExtractionRevision(Base):
+    __tablename__ = "purchase_order_extraction_revisions"
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    revision_number: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    extracted_data: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    validation_report: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
+    validation_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    model_name: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    created_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )

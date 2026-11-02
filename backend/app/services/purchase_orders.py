@@ -67,6 +67,10 @@ class PurchaseOrderResponse(BaseModel):
     model_name: str
     created_at: datetime
 
+class PurchaseOrderRevisionResponse(PurchaseOrderResponse):
+    revision_number: int
+    created_by_id: UUID | None = None
+
 
 SYSTEM_PROMPT = """
 You extract purchase order data from supplied document text.
