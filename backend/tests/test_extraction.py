@@ -130,15 +130,11 @@ def context(tmp_path, monkeypatch):
 
 
 def extract(context):
-    return context.client.post(
-        f"/documents/{context.document.id}/extract"
-    )
+    return context.client.post(f"/documents/{context.document.id}/extract")
 
 
 def get_pages(context):
-    return context.client.get(
-        f"/documents/{context.document.id}/pages"
-    )
+    return context.client.get(f"/documents/{context.document.id}/pages")
 
 
 def test_extracts_text_with_page_references(context):

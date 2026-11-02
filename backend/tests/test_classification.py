@@ -69,12 +69,14 @@ def context(monkeypatch):
             password_hash="test-only",
         )
 
-        db.add_all([
-            operations_user,
-            finance_user,
-            operations_manager,
-            admin_user,
-        ])
+        db.add_all(
+            [
+                operations_user,
+                finance_user,
+                operations_manager,
+                admin_user,
+            ]
+        )
         db.flush()
 
         document = Document(
@@ -145,9 +147,7 @@ def context(monkeypatch):
 
 
 def classify(context):
-    return context.client.post(
-        f"/documents/{context.document.id}/classify"
-    )
+    return context.client.post(f"/documents/{context.document.id}/classify")
 
 
 def review(context, decision="approve", note=None):
@@ -225,9 +225,7 @@ def test_admin_can_approve(context):
 
     assert response.status_code == 200
     assert response.json()["review_status"] == "approved"
-    assert response.json()["reviewed_by_id"] == str(
-        context.admin_user.id
-    )
+    assert response.json()["reviewed_by_id"] == str(context.admin_user.id)
 
 
 def test_manager_can_approve_own_department(context):
@@ -250,9 +248,7 @@ def test_other_department_cannot_read_classification(context):
 
     context.login_as(context.finance_user)
 
-    response = context.client.get(
-        f"/documents/{context.document.id}/classification"
-    )
+    response = context.client.get(f"/documents/{context.document.id}/classification")
 
     assert response.status_code == 404
 
@@ -279,10 +275,14 @@ def test_invalid_ai_evidence_is_not_saved(context, monkeypatch):
     assert response.status_code == 503
 
     with Session(context.engine) as db:
-        assert db.get(
-            DocumentClassification,
-            context.document.id,
-        ) is None
+        assert (
+            db.get(
+                DocumentClassification,
+                context.document.id,
+            )
+            is None
+        )
+
 
 def test_long_rationale_is_trimmed():
     proposal = ClassificationProposal(
@@ -292,9 +292,7 @@ def test_long_rationale_is_trimmed():
         evidence_page_numbers=[1],
     )
 
-    pages = [
-        SimpleNamespace(page_number=1)
-    ]
+    pages = [SimpleNamespace(page_number=1)]
 
     validate_proposal(proposal, pages)
 

@@ -71,9 +71,7 @@ def context():
 
 
 def test_department_requires_login(context):
-    response = context.client.get(
-        f"/departments/{context.finance.id}"
-    )
+    response = context.client.get(f"/departments/{context.finance.id}")
 
     assert response.status_code == 401
 
@@ -81,9 +79,7 @@ def test_department_requires_login(context):
 def test_staff_can_access_own_department(context):
     context.login_as(context.finance_user)
 
-    response = context.client.get(
-        f"/departments/{context.finance.id}"
-    )
+    response = context.client.get(f"/departments/{context.finance.id}")
 
     assert response.status_code == 200
     assert response.json()["name"] == "Finance"
@@ -92,9 +88,7 @@ def test_staff_can_access_own_department(context):
 def test_staff_cannot_access_other_department(context):
     context.login_as(context.finance_user)
 
-    response = context.client.get(
-        f"/departments/{context.operations.id}"
-    )
+    response = context.client.get(f"/departments/{context.operations.id}")
 
     assert response.status_code == 403
 
@@ -102,9 +96,7 @@ def test_staff_cannot_access_other_department(context):
 def test_admin_can_access_other_department(context):
     context.login_as(context.admin_user)
 
-    response = context.client.get(
-        f"/departments/{context.operations.id}"
-    )
+    response = context.client.get(f"/departments/{context.operations.id}")
 
     assert response.status_code == 200
     assert response.json()["name"] == "Operations"

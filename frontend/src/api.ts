@@ -140,6 +140,12 @@ export type PurchaseOrderResult = {
     subtotal: string | null;
     tax_amount: string | null;
     total_amount: string | null;
+    delivery_milestones?: {
+    name: string;
+    due_date: string;
+    deliverables: string;
+    page_number: number;
+}[];
   };
   validation: {
     status: "passed" | "flagged" | "needs_review";
@@ -390,4 +396,43 @@ export async function fetchPurchaseOrderReviews(
       headers: authHeaders(token),
     },
   );
+}
+
+export type KnowledgeSearchHit = {
+  document_id: string;
+  document_title: string; // Previously: title
+  page_number: number;
+  snippet: string;
+  source_ref: string;
+};
+
+export async function searchKnowledge(
+  token: string,
+  query: string,
+): Promise<KnowledgeSearchHit[]> {
+  const params = new URLSearchParams({
+    q: query.trim(),
+    limit: "20",
+  });
+
+  const response = await fetch(
+    `/api/knowledge/search?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Knowledge search failed (HTTP ${response.status})`,
+    );
+  }
+
+  return (await response.json()) as KnowledgeSearchHit[];
 }

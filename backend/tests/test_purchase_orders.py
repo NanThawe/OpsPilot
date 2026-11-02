@@ -4,8 +4,43 @@ from app.services import purchase_orders as service
 from app.services.purchase_orders import (
     PurchaseOrderLine,
     PurchaseOrderProposal,
+    reconcile_purchase_order_from_source,
+    resolve_source_pages,
     validate_purchase_order,
 )
+
+
+def test_two_page_document_references():
+    pages = [
+        SimpleNamespace(
+            page_number=1,
+            text="Purchase Order PO-002",
+        ),
+        SimpleNamespace(
+            page_number=2,
+            text="Rugged equipment delivery",
+        ),
+    ]
+
+    proposal = PurchaseOrderProposal(
+        po_number="PO-002",
+        line_items=[
+            PurchaseOrderLine(
+                description="Rugged equipment delivery",
+                quantity="2",
+                unit_price="100.00",
+                printed_line_total="200.00",
+                page_number=0,
+            )
+        ],
+        total_amount="200.00",
+        evidence_page_numbers=[0, 3],
+    )
+
+    result = resolve_source_pages(proposal, pages)
+
+    assert result.evidence_page_numbers == [1, 2]
+    assert result.line_items[0].page_number == 2
 
 
 def make_purchase_order(
@@ -59,11 +94,7 @@ def test_ten_dollar_discrepancy_is_flagged():
     assert result.status == "flagged"
     assert result.calculated_total == "1635.00"
 
-    issue = next(
-        issue
-        for issue in result.issues
-        if issue.code == "total_mismatch"
-    )
+    issue = next(issue for issue in result.issues if issue.code == "total_mismatch")
 
     assert issue.expected == "1635.00"
     assert issue.stated == "1625.00"
@@ -76,10 +107,7 @@ def test_wrong_line_item_total_is_flagged():
     result = validate_purchase_order(proposal)
 
     assert result.status == "flagged"
-    assert any(
-        issue.code == "line_amount_mismatch"
-        for issue in result.issues
-    )
+    assert any(issue.code == "line_amount_mismatch" for issue in result.issues)
 
 
 def test_missing_grand_total_needs_review():
@@ -130,9 +158,8 @@ def test_ollama_extracts_structured_purchase_order(monkeypatch):
 
     assert result.po_number == "PO-SYN-2026-TEST"
     assert result.total_amount == "1635.00"
-    assert captured["format"] == (
-        PurchaseOrderProposal.model_json_schema()
-    )
+    assert captured["format"] == (PurchaseOrderProposal.model_json_schema())
+
 
 from app.services.purchase_orders import (
     parse_flattened_ordered_items,
@@ -195,3 +222,117 @@ TOTAL PAYABLE (SGD)
         and issue.stated == "1625.00"
         for issue in result.issues
     )
+
+
+def test_two_page_purchase_order_extracts_correctly():
+    page_one = """
+PURCHASE ORDER
+PO NUMBER
+PO-SYN-2026-002
+CURRENCY
+SGD
+BUYER / BILL TO
+Harborlane Facilities
+SUPPLIER
+Pinecrest Industrial Materials
+ORDERED ITEMS
+ITEM CODE
+DESCRIPTION
+QTY
+UNIT (SGD)
+AMOUNT
+OPS-SCAN
+Portable barcode scanner
+15
+235.00
+3,525.00
+OPS-PRNT
+Rugged thermal label printer
+6
+468.00
+2,808.00
+OPS-LABL
+Thermal label roll (carton)
+20
+39.00
+780.00
+OPS-BATT
+Spare battery pack
+12
+68.00
+816.00
+Subtotal
+7,929.00
+Volume discount (5%)
+-396.45
+Taxable base
+7,532.55
+GST (9%)
+677.93
+TOTAL PAYABLE (SGD)
+8,210.48
+"""
+
+    page_two = """
+DELIVERY TERMS
+STAGED DELIVERY SCHEDULE
+MILESTONE
+DUE
+DELIVERABLES
+Batch A
+10 Nov 2026
+10 scanners; 3 label printers
+10 cartons thermal labels
+Batch B
+24 Nov 2026
+5 scanners; 3 label printers
+10 label cartons; 12 battery packs
+DELIVERY LOCATION AND RECEIVING RULES
+"""
+
+    pages = [
+        SimpleNamespace(
+            page_number=1,
+            text=page_one,
+        ),
+        SimpleNamespace(
+            page_number=2,
+            text=page_two,
+        ),
+    ]
+
+    proposal = PurchaseOrderProposal(
+        po_number="PO-SYN-2026-002",
+        vendor="Incorrect supplier details",
+        line_items=[],
+        evidence_page_numbers=[0],
+    )
+
+    result = reconcile_purchase_order_from_source(
+        proposal,
+        pages,
+    )
+
+    result = resolve_source_pages(result, pages)
+
+    validation = validate_purchase_order(result)
+
+    assert result.vendor == "Pinecrest Industrial Materials"
+    assert result.buyer == "Harborlane Facilities"
+    assert result.currency == "SGD"
+
+    assert len(result.line_items) == 4
+    assert result.subtotal == "7929.00"
+    assert result.discount_amount == "396.45"
+    assert result.tax_amount == "677.93"
+    assert result.total_amount == "8210.48"
+
+    assert len(result.delivery_milestones) == 2
+    assert result.delivery_milestones[0].name == "Batch A"
+    assert result.delivery_milestones[1].name == "Batch B"
+
+    assert result.evidence_page_numbers == [1, 2]
+
+    assert validation.status == "passed"
+    assert validation.calculated_total == "8210.48"
+    assert validation.issues == []

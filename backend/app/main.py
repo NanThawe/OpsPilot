@@ -4,8 +4,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.access import router as access_router
 from app.api.auth import router as auth_router
+from app.api.classification import router as classification_router
 from app.api.documents import router as documents_router
 from app.api.extraction import router as extraction_router
+from app.api.knowledge import router as knowledge_router
 from app.db.session import get_engine
 
 app = FastAPI(
@@ -17,6 +19,8 @@ app.include_router(auth_router)
 app.include_router(access_router)
 app.include_router(documents_router)
 app.include_router(extraction_router)
+app.include_router(classification_router)
+app.include_router(knowledge_router)
 
 
 @app.get("/health", tags=["System"])
@@ -26,6 +30,7 @@ def health_check() -> dict[str, str]:
         "status": "ok",
         "service": "opspilot-api",
     }
+
 
 @app.get("/db-health", tags=["System"])
 def database_health_check() -> dict[str, str]:

@@ -57,6 +57,16 @@ Rules:
 7. Use high, medium or low confidence.
 8. Confidence is qualitative, not a calibrated probability.
 9. Do not perform arithmetic validation or approve documents.
+
+Provide a concise rationale explaining why the document matches
+the selected classification.
+
+The rationale must:
+- Contain one or two short sentences.
+- Be no longer than 250 characters.
+- Never be empty.
+- Mention relevant evidence from the document.
+- Avoid repeating the document's contents.
 """
 
 
@@ -73,17 +83,13 @@ def validate_proposal(
         or len(evidence) > 10
         or any(page not in valid_pages for page in evidence)
     ):
-        raise ClassificationServiceError(
-            "AI returned invalid page references"
-        )
+        raise ClassificationServiceError("AI returned invalid page references")
 
         # Normalise whitespace in the AI explanation.
     rationale = " ".join(proposal.rationale.split())
 
     if not rationale:
-        raise ClassificationServiceError(
-            "AI returned an empty rationale"
-        )
+        raise ClassificationServiceError("AI returned an empty rationale")
 
     # Keep explanations within the database/API limit.
     if len(rationale) > 500:
@@ -96,13 +102,10 @@ def classify_pages(
     pages: Sequence[DocumentPage],
 ) -> ClassificationProposal:
     if not pages:
-        raise ClassificationInputError(
-            "No extracted document pages are available"
-        )
+        raise ClassificationInputError("No extracted document pages are available")
 
     document_text = "\n\n".join(
-        f"[PAGE {page.page_number}]\n{page.text}"
-        for page in pages
+        f"[PAGE {page.page_number}]\n{page.text}" for page in pages
     )
 
     if len(document_text) > MAX_INPUT_CHARS:
@@ -111,7 +114,6 @@ def classify_pages(
         )
 
     if settings.ai_provider == "ollama":
-
         try:
             client = OllamaClient(
                 host=settings.ollama_base_url,
@@ -150,18 +152,13 @@ def classify_pages(
             ) from exc
 
     elif settings.ai_provider == "openai":
-
         if settings.openai_api_key is None:
-            raise ClassificationServiceError(
-                "OpenAI API key is not configured"
-            )
+            raise ClassificationServiceError("OpenAI API key is not configured")
 
         api_key = settings.openai_api_key.get_secret_value()
 
         if not api_key.strip():
-            raise ClassificationServiceError(
-                "OpenAI API key is not configured"
-            )
+            raise ClassificationServiceError("OpenAI API key is not configured")
 
         client = OpenAI(
             api_key=api_key,
@@ -199,13 +196,12 @@ def classify_pages(
             )
 
     else:
-        raise ClassificationServiceError(
-            "Unsupported AI provider"
-        )
+        raise ClassificationServiceError("Unsupported AI provider")
 
     validate_proposal(proposal, pages)
 
     return proposal
+
 
 def classification_model_name() -> str:
     if settings.ai_provider == "ollama":

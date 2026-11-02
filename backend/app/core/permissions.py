@@ -40,6 +40,7 @@ def enforce_department_access(
             detail="Insufficient permissions",
         )
 
+
 def document_access_filter(current_user: User):
     """
     Return a database filter for documents

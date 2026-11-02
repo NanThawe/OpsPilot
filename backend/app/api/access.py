@@ -59,13 +59,9 @@ def get_department(
 def admin_overview(
     db: Annotated[Session, Depends(get_db)],
 ):
-    user_count = db.scalar(
-        select(func.count()).select_from(User)
-    ) or 0
+    user_count = db.scalar(select(func.count()).select_from(User)) or 0
 
-    department_count = db.scalar(
-        select(func.count()).select_from(Department)
-    ) or 0
+    department_count = db.scalar(select(func.count()).select_from(Department)) or 0
 
     return AdminOverviewResponse(
         user_count=user_count,

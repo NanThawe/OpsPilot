@@ -45,9 +45,7 @@ def login(
 ):
     email = form_data.username.strip().lower()
 
-    user = db.scalar(
-        select(User).where(User.email == email)
-    )
+    user = db.scalar(select(User).where(User.email == email))
 
     if user is None:
         verify_password(form_data.password, DUMMY_HASH)
@@ -66,9 +64,7 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return TokenResponse(
-        access_token=create_access_token(user.id)
-    )
+    return TokenResponse(access_token=create_access_token(user.id))
 
 
 @router.get("/me", response_model=UserResponse)

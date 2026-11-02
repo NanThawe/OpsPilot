@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
     text,
@@ -97,6 +99,7 @@ class User(Base):
         back_populates="users",
     )
 
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -165,8 +168,8 @@ class Document(Base):
     )
 
     size_bytes: Mapped[int | None] = mapped_column(
-    BigInteger,
-    nullable=True,
+        BigInteger,
+        nullable=True,
     )
 
     sha256: Mapped[str | None] = mapped_column(
@@ -175,10 +178,10 @@ class Document(Base):
     )
 
     extraction_status: Mapped[str] = mapped_column(
-    String(20),
-    nullable=False,
-    default="pending",
-    server_default="pending",
+        String(20),
+        nullable=False,
+        default="pending",
+        server_default="pending",
     )
 
     extraction_error: Mapped[str | None] = mapped_column(
@@ -195,6 +198,7 @@ class Document(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
 
 class DocumentPage(Base):
     __tablename__ = "document_pages"
@@ -213,6 +217,7 @@ class DocumentPage(Base):
         Text,
         nullable=False,
     )
+
 
 class DocumentClassification(Base):
     __tablename__ = "document_classifications"
@@ -275,6 +280,7 @@ class DocumentClassification(Base):
         server_default=func.now(),
     )
 
+
 class PurchaseOrderExtraction(Base):
     __tablename__ = "purchase_order_extractions"
 
@@ -308,6 +314,7 @@ class PurchaseOrderExtraction(Base):
         server_default=func.now(),
         nullable=False,
     )
+
 
 class PurchaseOrderExtractionRevision(Base):
     __tablename__ = "purchase_order_extraction_revisions"
@@ -353,6 +360,7 @@ class PurchaseOrderExtractionRevision(Base):
         nullable=False,
     )
 
+
 class PurchaseOrderReview(Base):
     __tablename__ = "purchase_order_reviews"
 
@@ -382,6 +390,62 @@ class PurchaseOrderReview(Base):
     )
 
     reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "page_number",
+            "chunk_index",
+            name="uq_document_chunks_page_index",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    page_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    embedding: Mapped[list[float]] = mapped_column(
+        VECTOR(768),
+        nullable=False,
+    )
+
+    embedding_model: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,

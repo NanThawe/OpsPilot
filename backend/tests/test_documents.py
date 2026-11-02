@@ -118,9 +118,7 @@ def test_staff_only_lists_accessible_documents(context):
 
     assert response.status_code == 200
 
-    returned_ids = {
-        item["id"] for item in response.json()
-    }
+    returned_ids = {item["id"] for item in response.json()}
 
     assert str(context.finance_doc.id) in returned_ids
     assert str(context.company_doc.id) in returned_ids
@@ -130,9 +128,7 @@ def test_staff_only_lists_accessible_documents(context):
 def test_staff_cannot_read_other_department_document(context):
     context.login_as(context.finance_user)
 
-    response = context.client.get(
-        f"/documents/{context.operations_doc.id}"
-    )
+    response = context.client.get(f"/documents/{context.operations_doc.id}")
 
     assert response.status_code == 404
 
@@ -154,9 +150,7 @@ def test_staff_can_register_department_document(context):
 
     assert data["visibility"] == "department"
     assert data["status"] == "pending_upload"
-    assert data["department_id"] == str(
-        context.finance_user.department_id
-    )
+    assert data["department_id"] == str(context.finance_user.department_id)
 
 
 def test_staff_cannot_publish_company_document(context):

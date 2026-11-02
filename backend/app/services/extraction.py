@@ -30,16 +30,12 @@ def extract_pdf_pages(path: Path) -> ExtractionResult:
         reader = PdfReader(path, strict=True)
 
         if reader.is_encrypted:
-            raise ExtractionError(
-                "Password-protected PDFs are not supported"
-            )
+            raise ExtractionError("Password-protected PDFs are not supported")
 
         page_count = len(reader.pages)
 
         if page_count > MAX_PAGES:
-            raise ExtractionError(
-                f"PDF exceeds the {MAX_PAGES}-page limit"
-            )
+            raise ExtractionError(f"PDF exceeds the {MAX_PAGES}-page limit")
 
         extracted_pages = []
         total_chars = 0
@@ -54,21 +50,15 @@ def extract_pdf_pages(path: Path) -> ExtractionResult:
             text = text.replace("\x00", "").strip()
 
             if len(text) > MAX_PAGE_CHARS:
-                raise ExtractionError(
-                    f"Page {page_number} exceeds the text limit"
-                )
+                raise ExtractionError(f"Page {page_number} exceeds the text limit")
 
             total_chars += len(text)
 
             if total_chars > MAX_TOTAL_CHARS:
-                raise ExtractionError(
-                    "PDF exceeds the total extracted text limit"
-                )
+                raise ExtractionError("PDF exceeds the total extracted text limit")
 
             if text:
-                extracted_pages.append(
-                    (page_number, text)
-                )
+                extracted_pages.append((page_number, text))
 
         return ExtractionResult(
             page_count=page_count,
@@ -76,6 +66,4 @@ def extract_pdf_pages(path: Path) -> ExtractionResult:
         )
 
     except (PdfReadError, ValueError) as exc:
-        raise ExtractionError(
-            "Unable to extract text from this PDF"
-        ) from exc
+        raise ExtractionError("Unable to extract text from this PDF") from exc

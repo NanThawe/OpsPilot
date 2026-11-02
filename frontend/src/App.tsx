@@ -10,6 +10,7 @@ import {
 } from "./api";
 
 import "./App.css";
+import KnowledgeSearch from "./components/KnowledgeSearch";
 
 
 type Session = {
@@ -225,6 +226,7 @@ function App() {
           <div>
             <div className="eyebrow">OPERATIONS WORKSPACE</div>
             <h1>Document dashboard</h1>
+      
 
             <p className="muted">
               View documents available to your account.
@@ -361,6 +363,7 @@ function App() {
             </div>
           )}
         </section>
+        <KnowledgeSearch token={session.token} />
       </main>
     </div>
   );

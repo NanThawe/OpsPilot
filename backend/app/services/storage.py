@@ -79,18 +79,14 @@ def save_pdf(upload: UploadFile) -> tuple[str, str, int]:
 
                 if first_chunk:
                     if not chunk.startswith(b"%PDF-"):
-                        raise InvalidPdfError(
-                            "File does not have a PDF signature"
-                        )
+                        raise InvalidPdfError("File does not have a PDF signature")
 
                     first_chunk = False
 
                 total_size += len(chunk)
 
                 if total_size > MAX_FILE_SIZE:
-                    raise FileTooLargeError(
-                        "Maximum file size is 10 MB"
-                    )
+                    raise FileTooLargeError("Maximum file size is 10 MB")
 
                 hasher.update(chunk)
                 output.write(chunk)
@@ -104,19 +100,13 @@ def save_pdf(upload: UploadFile) -> tuple[str, str, int]:
                 reader = PdfReader(pdf_file, strict=True)
 
                 if reader.is_encrypted:
-                    raise InvalidPdfError(
-                        "Password-protected PDFs are not supported"
-                    )
+                    raise InvalidPdfError("Password-protected PDFs are not supported")
 
                 if len(reader.pages) == 0:
-                    raise InvalidPdfError(
-                        "PDF must contain at least one page"
-                    )
+                    raise InvalidPdfError("PDF must contain at least one page")
 
         except (PdfReadError, ValueError) as exc:
-            raise InvalidPdfError(
-                "Invalid or unsupported PDF"
-            ) from exc
+            raise InvalidPdfError("Invalid or unsupported PDF") from exc
 
         temporary_path.replace(final_path)
 

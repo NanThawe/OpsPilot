@@ -15,6 +15,4 @@ def test_database_health_when_unavailable(monkeypatch):
     response = client.get("/db-health")
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": "Database unavailable"
-    }
+    assert response.json() == {"detail": "Database unavailable"}

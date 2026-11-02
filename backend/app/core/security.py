@@ -37,9 +37,7 @@ def create_access_token(user_id: UUID) -> str:
         "sub": str(user_id),
         "iss": "opspilot",
         "iat": now,
-        "exp": now + timedelta(
-            minutes=settings.access_token_expire_minutes
-        ),
+        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
 
     return jwt.encode(

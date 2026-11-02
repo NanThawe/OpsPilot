@@ -341,6 +341,37 @@ export function DocumentDetail({
                     </tbody>
                   </table>
                 </div>
+                {(purchaseOrder.extraction.delivery_milestones ?? []).length > 0 && (
+                <div className="detail-section">
+                <h4>Delivery milestones</h4>
+
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Milestone</th>
+                        <th>Due date</th>
+                        <th>Deliverables</th>
+                        <th>Source page</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {purchaseOrder.extraction.delivery_milestones?.map(
+                        (milestone, index) => (
+                          <tr key={index}>
+                            <td>{milestone.name}</td>
+                            <td>{milestone.due_date}</td>
+                            <td>{milestone.deliverables}</td>
+                            <td>{milestone.page_number}</td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
                 {purchaseOrder.validation.issues.length > 0 && (
                   <div className="validation-issues">

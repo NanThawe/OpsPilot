@@ -92,19 +92,13 @@ def classify_document(
         )
 
     # Only the creator or an admin can request classification.
-    if (
-        current_user.role != "admin"
-        and document.created_by_id != current_user.id
-    ):
+    if current_user.role != "admin" and document.created_by_id != current_user.id:
         raise HTTPException(
             status_code=404,
             detail="Document not found",
         )
 
-    if (
-        document.status != "ready"
-        or document.extraction_status != "completed"
-    ):
+    if document.status != "ready" or document.extraction_status != "completed":
         raise HTTPException(
             status_code=409,
             detail="Document text extraction must be completed first",
@@ -149,9 +143,7 @@ def classify_document(
         predicted_type=proposal.predicted_type,
         confidence=proposal.confidence,
         rationale=proposal.rationale,
-        evidence_page_numbers=sorted(
-            set(proposal.evidence_page_numbers)
-        ),
+        evidence_page_numbers=sorted(set(proposal.evidence_page_numbers)),
         model_name=classification_model_name(),
         review_status="pending_review",
     )
@@ -228,12 +220,9 @@ def review_classification(
 
     document = db.get(Document, document_id)
 
-    if (
-        document is None
-        or (
-            current_user.role != "admin"
-            and document.department_id != current_user.department_id
-        )
+    if document is None or (
+        current_user.role != "admin"
+        and document.department_id != current_user.department_id
     ):
         raise HTTPException(
             status_code=404,
@@ -258,10 +247,7 @@ def review_classification(
             detail="Classification has already been reviewed",
         )
 
-    if (
-        payload.decision == "reject"
-        and not (payload.note or "").strip()
-    ):
+    if payload.decision == "reject" and not (payload.note or "").strip():
         raise HTTPException(
             status_code=422,
             detail="A reason is required when rejecting",
@@ -274,12 +260,12 @@ def review_classification(
     classification.reviewed_by_id = current_user.id
     classification.reviewed_at = datetime.now(UTC)
     classification.review_note = payload.note
-    
 
     db.commit()
     db.refresh(classification)
 
     return classification
+
 
 def purchase_order_response(
     record: PurchaseOrderExtraction,
@@ -308,19 +294,13 @@ def extract_purchase_order_endpoint(
 
     # Only the document creator or an admin may initiate extraction.
     # Return 404 to avoid revealing inaccessible document IDs.
-    if document is None or (
-        user.role != "admin"
-        and document.created_by_id != user.id
-    ):
+    if document is None or (user.role != "admin" and document.created_by_id != user.id):
         raise HTTPException(
             status_code=404,
             detail="Document not found",
         )
 
-    if (
-        document.status != "ready"
-        or document.extraction_status != "completed"
-    ):
+    if document.status != "ready" or document.extraction_status != "completed":
         raise HTTPException(
             status_code=409,
             detail="PDF text extraction must be completed first",
@@ -429,6 +409,7 @@ def get_purchase_order_endpoint(
 
     return purchase_order_response(record)
 
+
 def purchase_order_revision_response(
     revision: PurchaseOrderExtractionRevision,
 ) -> dict:
@@ -441,6 +422,7 @@ def purchase_order_revision_response(
         "revision_number": revision.revision_number,
         "created_by_id": revision.created_by_id,
     }
+
 
 @router.post(
     "/{document_id}/purchase-order/reprocess",
@@ -455,19 +437,13 @@ def reprocess_purchase_order_endpoint(
 ):
     document = db.get(Document, document_id)
 
-    if document is None or (
-        user.role != "admin"
-        and document.created_by_id != user.id
-    ):
+    if document is None or (user.role != "admin" and document.created_by_id != user.id):
         raise HTTPException(
             status_code=404,
             detail="Document not found",
         )
 
-    if (
-        document.status != "ready"
-        or document.extraction_status != "completed"
-    ):
+    if document.status != "ready" or document.extraction_status != "completed":
         raise HTTPException(
             status_code=409,
             detail="PDF text extraction must be completed first",
@@ -541,11 +517,7 @@ def reprocess_purchase_order_endpoint(
         )
 
     latest_number = db.scalar(
-        select(
-            func.max(
-                PurchaseOrderExtractionRevision.revision_number
-            )
-        ).where(
+        select(func.max(PurchaseOrderExtractionRevision.revision_number)).where(
             PurchaseOrderExtractionRevision.document_id == document_id
         )
     )
@@ -555,10 +527,10 @@ def reprocess_purchase_order_endpoint(
         (document_id, latest_number or 1),
     )
 
-    if (
-        existing_decision is not None
-        and existing_decision.decision in {"approved", "rejected"}
-    ):
+    if existing_decision is not None and existing_decision.decision in {
+        "approved",
+        "rejected",
+    }:
         raise HTTPException(
             status_code=409,
             detail="Approved or rejected revisions cannot be reprocessed",
@@ -603,6 +575,7 @@ def reprocess_purchase_order_endpoint(
 
     return purchase_order_revision_response(new_revision)
 
+
 @router.get(
     "/{document_id}/purchase-order/history",
     response_model=list[PurchaseOrderRevisionResponse],
@@ -628,17 +601,12 @@ def get_purchase_order_history_endpoint(
 
     revisions = db.scalars(
         select(PurchaseOrderExtractionRevision)
-        .where(
-            PurchaseOrderExtractionRevision.document_id == document_id
-        )
+        .where(PurchaseOrderExtractionRevision.document_id == document_id)
         .order_by(PurchaseOrderExtractionRevision.revision_number)
     ).all()
 
     if revisions:
-        return [
-            purchase_order_revision_response(revision)
-            for revision in revisions
-        ]
+        return [purchase_order_revision_response(revision) for revision in revisions]
 
     # Compatibility for records created before Step 12.
     existing = db.get(PurchaseOrderExtraction, document_id)
@@ -660,6 +628,7 @@ def get_purchase_order_history_endpoint(
             "created_by_id": None,
         }
     ]
+
 
 @router.post(
     "/{document_id}/purchase-order/review",
@@ -700,9 +669,7 @@ def review_purchase_order_endpoint(
     # Lock the current extraction while deciding.
     current = db.scalar(
         select(PurchaseOrderExtraction)
-        .where(
-            PurchaseOrderExtraction.document_id == document_id
-        )
+        .where(PurchaseOrderExtraction.document_id == document_id)
         .with_for_update()
     )
 
@@ -712,15 +679,14 @@ def review_purchase_order_endpoint(
             detail="Purchase order has not been extracted",
         )
 
-    latest_revision = db.scalar(
-        select(
-            func.max(
-                PurchaseOrderExtractionRevision.revision_number
+    latest_revision = (
+        db.scalar(
+            select(func.max(PurchaseOrderExtractionRevision.revision_number)).where(
+                PurchaseOrderExtractionRevision.document_id == document_id
             )
-        ).where(
-            PurchaseOrderExtractionRevision.document_id == document_id
         )
-    ) or 1
+        or 1
+    )
 
     if payload.revision_number != latest_revision:
         raise HTTPException(
@@ -750,11 +716,8 @@ def review_purchase_order_endpoint(
             detail="This revision has already been reviewed",
         )
 
-    if (
-        payload.decision == "approve"
-        and not can_approve_purchase_order(
-            current.validation_status
-        )
+    if payload.decision == "approve" and not can_approve_purchase_order(
+        current.validation_status
     ):
         raise HTTPException(
             status_code=409,
@@ -780,6 +743,7 @@ def review_purchase_order_endpoint(
     db.refresh(review)
 
     return review
+
 
 @router.get(
     "/{document_id}/purchase-order/reviews",

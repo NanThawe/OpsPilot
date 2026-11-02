@@ -12,8 +12,7 @@ def test_models_are_registered():
 
 def test_user_department_foreign_key():
     foreign_keys = {
-        fk.target_fullname
-        for fk in User.__table__.c.department_id.foreign_keys
+        fk.target_fullname for fk in User.__table__.c.department_id.foreign_keys
     }
 
     assert "departments.id" in foreign_keys
@@ -23,8 +22,7 @@ def test_user_role_constraint():
     constraints = User.__table__.constraints
 
     assert any(
-        isinstance(constraint, CheckConstraint)
-        and constraint.name == "ck_users_role"
+        isinstance(constraint, CheckConstraint) and constraint.name == "ck_users_role"
         for constraint in constraints
     )
 

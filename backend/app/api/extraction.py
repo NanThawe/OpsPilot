@@ -67,9 +67,7 @@ def process_document(
     db: Annotated[Session, Depends(get_db)],
 ):
     document = db.scalar(
-        select(Document)
-        .where(Document.id == document_id)
-        .with_for_update()
+        select(Document).where(Document.id == document_id).with_for_update()
     )
 
     if document is None:
@@ -79,10 +77,7 @@ def process_document(
         )
 
     # Only the document creator or an admin can process it.
-    if (
-        current_user.role != "admin"
-        and document.created_by_id != current_user.id
-    ):
+    if current_user.role != "admin" and document.created_by_id != current_user.id:
         raise HTTPException(
             status_code=404,
             detail="Document not found",
@@ -108,28 +103,18 @@ def process_document(
         try:
             path = get_storage_path(document.storage_key)
         except ValueError as exc:
-            raise ExtractionError(
-                "Invalid stored file reference"
-            ) from exc
+            raise ExtractionError("Invalid stored file reference") from exc
 
         if not path.is_file():
-            raise ExtractionError(
-                "Stored PDF is missing"
-            )
+            raise ExtractionError("Stored PDF is missing")
 
         if not verify_file_checksum(path, document.sha256):
-            raise ExtractionError(
-                "Stored PDF failed its integrity check"
-            )
+            raise ExtractionError("Stored PDF failed its integrity check")
 
         result = extract_pdf_pages(path)
 
         # Replace previous page records when retrying.
-        db.execute(
-            delete(DocumentPage).where(
-                DocumentPage.document_id == document_id
-            )
-        )
+        db.execute(delete(DocumentPage).where(DocumentPage.document_id == document_id))
 
         db.add_all(
             [
@@ -142,9 +127,7 @@ def process_document(
             ]
         )
 
-        document.extraction_status = (
-            "completed" if result.pages else "needs_ocr"
-        )
+        document.extraction_status = "completed" if result.pages else "needs_ocr"
         document.extraction_error = None
         document.page_count = result.page_count
         document.extracted_at = datetime.now(UTC)
@@ -220,9 +203,7 @@ def get_document_pages(
         ExtractedPageResponse(
             page_number=page.page_number,
             text=page.text,
-            source_ref=(
-                f"document:{document_id}:page:{page.page_number}"
-            ),
+            source_ref=(f"document:{document_id}:page:{page.page_number}"),
         )
         for page in pages
     ]

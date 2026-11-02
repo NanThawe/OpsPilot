@@ -17,6 +17,7 @@ def get_engine() -> Engine:
         pool_pre_ping=True,
     )
 
+
 def get_db() -> Iterator[Session]:
     with Session(get_engine()) as session:
         yield session

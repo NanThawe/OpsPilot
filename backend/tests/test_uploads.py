@@ -134,13 +134,9 @@ def test_valid_pdf_upload_and_download(context):
 
     assert data["status"] == "ready"
     assert data["size_bytes"] == len(pdf_bytes)
-    assert data["sha256"] == hashlib.sha256(
-        pdf_bytes
-    ).hexdigest()
+    assert data["sha256"] == hashlib.sha256(pdf_bytes).hexdigest()
 
-    download = context.client.get(
-        f"/documents/{context.document.id}/download"
-    )
+    download = context.client.get(f"/documents/{context.document.id}/download")
 
     assert download.status_code == 200
     assert download.content == pdf_bytes
@@ -161,9 +157,7 @@ def test_other_department_cannot_download(context):
 
     context.login_as(context.operations_user)
 
-    response = context.client.get(
-        f"/documents/{context.document.id}/download"
-    )
+    response = context.client.get(f"/documents/{context.document.id}/download")
 
     assert response.status_code == 404
 
@@ -171,9 +165,7 @@ def test_other_department_cannot_download(context):
 def test_oversized_pdf_is_rejected(context):
     context.login_as(context.finance_user)
 
-    oversized_data = make_test_pdf() + (
-        b"x" * (10 * 1024 * 1024)
-    )
+    oversized_data = make_test_pdf() + (b"x" * (10 * 1024 * 1024))
 
     response = upload_file(context, oversized_data)
 
@@ -222,14 +214,10 @@ def test_modified_stored_file_fails_integrity_check(context):
 
     assert response.status_code == 200
 
-    stored_file = next(
-        context.storage_dir.glob("*.pdf")
-    )
+    stored_file = next(context.storage_dir.glob("*.pdf"))
 
     stored_file.write_bytes(b"modified after upload")
 
-    download = context.client.get(
-        f"/documents/{context.document.id}/download"
-    )
+    download = context.client.get(f"/documents/{context.document.id}/download")
 
     assert download.status_code == 409

@@ -62,10 +62,7 @@ def register_document(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    if (
-        payload.visibility == "company"
-        and current_user.role != "admin"
-    ):
+    if payload.visibility == "company" and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can create company-wide documents",
@@ -132,6 +129,7 @@ def get_document(
 
     return document
 
+
 @router.post(
     "/{document_id}/upload",
     response_model=DocumentResponse,
@@ -143,9 +141,7 @@ def upload_document(
     db: Annotated[Session, Depends(get_db)],
 ):
     document = db.scalar(
-        select(Document)
-        .where(Document.id == document_id)
-        .with_for_update()
+        select(Document).where(Document.id == document_id).with_for_update()
     )
 
     if document is None:
@@ -155,10 +151,7 @@ def upload_document(
         )
 
     # Only the creator or an administrator can upload.
-    if (
-        current_user.role != "admin"
-        and document.created_by_id != current_user.id
-    ):
+    if current_user.role != "admin" and document.created_by_id != current_user.id:
         raise HTTPException(
             status_code=404,
             detail="Document not found",
@@ -210,6 +203,7 @@ def upload_document(
     db.refresh(document)
 
     return document
+
 
 @router.get("/{document_id}/download")
 def download_document(

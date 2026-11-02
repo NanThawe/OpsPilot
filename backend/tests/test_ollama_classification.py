@@ -35,8 +35,7 @@ def test_ollama_returns_structured_classification(monkeypatch):
             assert kwargs["model"] == "qwen3:4b-instruct"
 
             assert kwargs["format"] == (
-                classification_service
-                .ClassificationProposal.model_json_schema()
+                classification_service.ClassificationProposal.model_json_schema()
             )
 
             return SimpleNamespace(
@@ -56,17 +55,14 @@ def test_ollama_returns_structured_classification(monkeypatch):
         FakeOllamaClient,
     )
 
-    result = classification_service.classify_pages(
-        [make_test_page()]
-    )
+    result = classification_service.classify_pages([make_test_page()])
 
     assert result.predicted_type == "purchase_order"
     assert result.confidence == "high"
     assert result.evidence_page_numbers == [1]
 
     assert (
-        classification_service.classification_model_name()
-        == "ollama:qwen3:4b-instruct"
+        classification_service.classification_model_name() == "ollama:qwen3:4b-instruct"
     )
 
 
@@ -78,11 +74,7 @@ def test_invalid_ollama_json_is_rejected(monkeypatch):
             pass
 
         def chat(self, **kwargs):
-            return SimpleNamespace(
-                message=SimpleNamespace(
-                    content="not valid JSON"
-                )
-            )
+            return SimpleNamespace(message=SimpleNamespace(content="not valid JSON"))
 
     monkeypatch.setattr(
         classification_service,
@@ -90,9 +82,5 @@ def test_invalid_ollama_json_is_rejected(monkeypatch):
         FakeOllamaClient,
     )
 
-    with pytest.raises(
-        classification_service.ClassificationServiceError
-    ):
-        classification_service.classify_pages(
-            [make_test_page()]
-        )
+    with pytest.raises(classification_service.ClassificationServiceError):
+        classification_service.classify_pages([make_test_page()])

@@ -9,12 +9,7 @@ from app.db.models import PurchaseOrderExtractionRevision
 def test_revision_uses_composite_primary_key():
     columns = {
         column.name
-        for column in (
-            PurchaseOrderExtractionRevision
-            .__table__
-            .primary_key
-            .columns
-        )
+        for column in (PurchaseOrderExtractionRevision.__table__.primary_key.columns)
     }
 
     assert columns == {

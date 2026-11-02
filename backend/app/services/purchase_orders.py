@@ -28,11 +28,13 @@ class PurchaseOrderLine(BaseModel):
     printed_line_total: str | None = None
     page_number: int
 
+
 class DeliveryMilestone(BaseModel):
     name: str
     due_date: str
     deliverables: str
     page_number: int
+
 
 class PurchaseOrderProposal(BaseModel):
     po_number: str | None = None
@@ -49,22 +51,17 @@ class PurchaseOrderProposal(BaseModel):
     total_amount: str | None = None
 
     evidence_page_numbers: list[int] = Field(default_factory=list)
-    delivery_milestones: list[DeliveryMilestone] = Field(
-    default_factory=list
-)
+    delivery_milestones: list[DeliveryMilestone] = Field(default_factory=list)
+
 
 def resolve_source_pages(
     proposal: PurchaseOrderProposal,
     pages: Sequence[DocumentPage],
 ) -> PurchaseOrderProposal:
-    valid_pages = sorted(
-        {page.page_number for page in pages}
-    )
+    valid_pages = sorted({page.page_number for page in pages})
 
     if not valid_pages:
-        raise PurchaseOrderServiceError(
-            "No source pages available"
-        )
+        raise PurchaseOrderServiceError("No source pages available")
 
     # Document-level references come from the actual PDF pages.
     proposal.evidence_page_numbers = valid_pages
@@ -74,17 +71,12 @@ def resolve_source_pages(
             continue
 
         # Try to locate the item description in the source text.
-        description = (
-            item.description.split(":", 1)[-1]
-            .strip()
-            .casefold()
-        )
+        description = item.description.split(":", 1)[-1].strip().casefold()
 
         matching_pages = [
             page.page_number
             for page in pages
-            if description
-            and description in page.text.casefold()
+            if description and description in page.text.casefold()
         ]
 
         if len(matching_pages) == 1:
@@ -95,6 +87,7 @@ def resolve_source_pages(
             )
 
     return proposal
+
 
 class ValidationIssue(BaseModel):
     code: str
@@ -116,6 +109,7 @@ class PurchaseOrderResponse(BaseModel):
     validation: ValidationResult
     model_name: str
     created_at: datetime
+
 
 class PurchaseOrderRevisionResponse(PurchaseOrderResponse):
     revision_number: int
@@ -158,13 +152,10 @@ def extract_purchase_order(
     pages: Sequence[DocumentPage],
 ) -> PurchaseOrderProposal:
     if not pages:
-        raise PurchaseOrderServiceError(
-            "No extracted document pages found"
-        )
+        raise PurchaseOrderServiceError("No extracted document pages found")
 
     document_text = "\n\n".join(
-        f"[PAGE {page.page_number}]\n{page.text}"
-        for page in pages
+        f"[PAGE {page.page_number}]\n{page.text}" for page in pages
     )
 
     if len(document_text) > MAX_INPUT_CHARS:
@@ -230,16 +221,13 @@ def _number(value: str | None) -> Decimal | None:
 
     return number
 
-#works only for the synthetic purchase order layout used in the MVP demo. It is not a general-purpose parser for arbitrary purchase orders.
+
+# works only for the synthetic purchase order layout used in the MVP demo. It is not a general-purpose parser for arbitrary purchase orders.
 def parse_flattened_ordered_items(
     text: str,
     page_number: int,
 ) -> list[PurchaseOrderLine]:
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     labels = [line.casefold() for line in lines]
 
@@ -264,20 +252,13 @@ def parse_flattened_ordered_items(
     items = []
 
     for index in range(0, len(values), 5):
-        code, description, quantity, unit_price, total = (
-            values[index : index + 5]
-        )
+        code, description, quantity, unit_price, total = values[index : index + 5]
 
         qty = _number(quantity)
         price = _number(unit_price)
         printed_total = _number(total)
 
-        if (
-            qty is None
-            or qty <= 0
-            or price is None
-            or printed_total is None
-        ):
+        if qty is None or qty <= 0 or price is None or printed_total is None:
             return []
 
         items.append(
@@ -292,12 +273,9 @@ def parse_flattened_ordered_items(
 
     return items
 
+
 def _lines(text: str) -> list[str]:
-    return [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 def _value_after_label(
@@ -377,11 +355,8 @@ def _parse_delivery_milestones(
             next_index = index + 2
             deliverables = []
 
-            while (
-                next_index < end
-                and not lines[next_index]
-                .casefold()
-                .startswith("batch ")
+            while next_index < end and not lines[next_index].casefold().startswith(
+                "batch "
             ):
                 deliverables.append(lines[next_index])
                 next_index += 1
@@ -407,11 +382,7 @@ def reconcile_purchase_order_from_source(
 ) -> PurchaseOrderProposal:
     # Prefer the page containing the actual order table.
     order_page = next(
-        (
-            page
-            for page in pages
-            if "ORDERED ITEMS" in page.text
-        ),
+        (page for page in pages if "ORDERED ITEMS" in page.text),
         None,
     )
 
@@ -493,6 +464,7 @@ def reconcile_purchase_order_from_source(
 
     return proposal
 
+
 def _money(value: Decimal) -> str:
     return str(value.quantize(CENT, rounding=ROUND_HALF_UP))
 
@@ -523,11 +495,7 @@ def validate_purchase_order(
         quantity = _number(item.quantity)
         unit_price = _number(item.unit_price)
 
-        if (
-            quantity is None
-            or quantity <= 0
-            or unit_price is None
-        ):
+        if quantity is None or quantity <= 0 or unit_price is None:
             incomplete = True
             issues.append(
                 ValidationIssue(
@@ -538,9 +506,7 @@ def validate_purchase_order(
             )
             continue
 
-        calculated_line = (
-            quantity * unit_price
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        calculated_line = (quantity * unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
 
         calculated_subtotal += calculated_line
 

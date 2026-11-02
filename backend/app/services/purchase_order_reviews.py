@@ -24,13 +24,16 @@ class PurchaseOrderReviewRequest(BaseModel):
         if self.note is not None:
             self.note = self.note.strip()
 
-        if self.decision in {
-            "reject",
-            "request_changes",
-        } and not self.note:
+        if (
+            self.decision
+            in {
+                "reject",
+                "request_changes",
+            }
+            and not self.note
+        ):
             raise ValueError(
-                "A review note is required for rejection "
-                "or change requests"
+                "A review note is required for rejection or change requests"
             )
 
         return self
