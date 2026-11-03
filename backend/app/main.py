@@ -11,6 +11,8 @@ from app.api.extraction import router as extraction_router
 from app.api.knowledge import router as knowledge_router
 from app.db.session import get_engine
 
+from app.api.agent_workflows import router as workflow_router
+
 app = FastAPI(
     title="OpsPilot API",
     description="AI-powered procurement and operations copilot",
@@ -23,6 +25,7 @@ app.include_router(extraction_router)
 app.include_router(classification_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
+app.include_router(workflow_router)
 
 
 @app.get("/health", tags=["System"])

@@ -12,6 +12,10 @@ Requires-Dist: alembic<2,>=1.13
 Requires-Dist: PyJWT<3,>=2.8
 Requires-Dist: pwdlib[argon2]<1,>=0.2
 Requires-Dist: python-multipart<1,>=0.0.9
+Requires-Dist: pypdf<7,>=6
+Requires-Dist: reportlab<5,>=4
+Requires-Dist: ollama<1,>=0.6
+Requires-Dist: httpx<1,>=0.27
 Provides-Extra: dev
 Requires-Dist: pytest<10,>=8; extra == "dev"
 Requires-Dist: httpx<1.0,>=0.27; extra == "dev"

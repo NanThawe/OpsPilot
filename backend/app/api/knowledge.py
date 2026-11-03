@@ -1,13 +1,16 @@
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from ollama import Client, ResponseError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.classification import get_current_user, get_db
+from app.core.config import settings
 from app.core.permissions import document_access_filter
 from app.db.models import (
     Document,
@@ -21,6 +24,11 @@ from app.db.models import (
 from app.services.knowledge_search import (
     escape_like,
     make_search_snippet,
+)
+from app.services.rag import (
+    SYSTEM_PROMPT,
+    build_rag_context,
+    validate_source_ids,
 )
 from app.services.semantic_search import (
     EMBEDDING_MODEL,
@@ -334,3 +342,175 @@ def semantic_search(
         )
         for chunk, title, dist in rows
     ]
+
+class AskRequest(BaseModel):
+    question: str = Field(
+        min_length=2,
+        max_length=500,
+    )
+
+
+class RagDraft(BaseModel):
+    supported: bool
+    answer: str
+    source_ids: list[int]
+
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    supported: bool
+    citations: list[SemanticSearchHit]
+    model_name: str
+
+@router.post(
+    "/ask",
+    response_model=AskResponse,
+)
+def ask_documents(
+    payload: AskRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    question = payload.question.strip()
+
+    if len(question) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Question is too short",
+        )
+
+    # Reuse the existing permission-aware semantic search.
+    sources = semantic_search(
+        q=question,
+        db=db,
+        user=user,
+        limit=5,
+    )
+
+    model_name = f"ollama:{settings.ollama_model}"
+
+    if not sources:
+        return AskResponse(
+            question=question,
+            answer=(
+                "I could not find sufficient information "
+                "in the approved documents."
+            ),
+            supported=False,
+            citations=[],
+            model_name=model_name,
+        )
+
+    context = build_rag_context(
+        [
+            (
+                source.document_title,
+                source.page_number,
+                source.snippet,
+            )
+            for source in sources
+        ]
+    )
+
+    user_prompt = (
+        f"QUESTION:\n{question}\n\n"
+        f"DOCUMENT EVIDENCE:\n{context}\n\n"
+        "Answer using only the document evidence. "
+        "If it does not directly support the answer, "
+        "set supported to false. "
+        "Return JSON matching the required schema."
+    )
+
+    try:
+        client = Client(
+            host=settings.ollama_base_url,
+            timeout=180.0,
+        )
+
+        response = client.chat(
+            model=settings.ollama_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            format=RagDraft.model_json_schema(),
+            options={"temperature": 0},
+        )
+
+        draft = RagDraft.model_validate_json(
+            response.message.content or ""
+        )
+
+    except (
+        ResponseError,
+        httpx.HTTPError,
+        ValidationError,
+    ) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG answer generation failed",
+        ) from exc
+
+    if not draft.supported:
+        return AskResponse(
+            question=question,
+            answer=(
+                "I could not confirm an answer "
+                "from the available document evidence."
+            ),
+            supported=False,
+            citations=[],
+            model_name=model_name,
+        )
+
+    if not draft.answer.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="AI returned an empty answer",
+        )
+
+    try:
+        valid_ids = validate_source_ids(
+            draft.source_ids,
+            len(sources),
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="AI returned invalid citations",
+        ) from exc
+
+    # Resolve citations against trusted database results.
+    # Never trust the LLM to invent source references.
+    citations = []
+    seen_pages = set()
+
+    for source_id in valid_ids:
+        source = sources[source_id - 1]
+
+        page_key = (
+            source.document_id,
+            source.page_number,
+        )
+
+        if page_key in seen_pages:
+            continue
+
+        seen_pages.add(page_key)
+        citations.append(source)
+
+    return AskResponse(
+        question=question,
+        answer=draft.answer.strip(),
+        supported=True,
+        citations=citations,
+        model_name=model_name,
+    )

@@ -23,6 +23,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+from datetime import datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column
+
 
 class Department(Base):
     __tablename__ = "departments"
@@ -449,4 +455,105 @@ class DocumentChunk(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+class AgentWorkflow(Base):
+    __tablename__ = "agent_workflows"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id"),
+        nullable=False,
+    )
+
+    requested_by_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="pending",
+    )
+
+    reviewed_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    review_comment: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class ProcurementFollowUp(Base):
+    __tablename__ = "procurement_follow_ups"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    workflow_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_workflows.id"),
+        unique=True,
+        nullable=False,
+    )
+
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id"),
+        nullable=False,
+    )
+
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class AgentAuditEvent(Base):
+    __tablename__ = "agent_audit_events"
+
+    id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+
+    workflow_id: Mapped[UUID] = mapped_column(
+        ForeignKey("agent_workflows.id"),
+        nullable=False,
+    )
+
+    actor_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
     )
