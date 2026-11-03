@@ -3,6 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.access import router as access_router
+from app.api.agent import router as agent_router
 from app.api.auth import router as auth_router
 from app.api.classification import router as classification_router
 from app.api.documents import router as documents_router
@@ -21,6 +22,7 @@ app.include_router(documents_router)
 app.include_router(extraction_router)
 app.include_router(classification_router)
 app.include_router(knowledge_router)
+app.include_router(agent_router)
 
 
 @app.get("/health", tags=["System"])
