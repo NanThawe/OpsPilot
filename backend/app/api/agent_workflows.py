@@ -10,6 +10,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.agents.approval_workflow import build_approval_graph
+from app.agents.followup_drafting import (
+    FollowUpDraftError,
+    build_followup_draft_graph,
+)
 from app.api.classification import get_current_user, get_db
 from app.api.knowledge import approved_knowledge_scope
 from app.db.models import (
@@ -17,6 +21,7 @@ from app.db.models import (
     AgentWorkflow,
     Document,
     DocumentClassification,
+    DocumentPage,
     ProcurementFollowUp,
     User,
 )
@@ -26,6 +31,9 @@ router = APIRouter(
     tags=["Agent workflows"],
 )
 
+class FollowUpDraftRequest(BaseModel):
+    document_id: UUID
+    instruction: str = Field(min_length=10, max_length=500)
 
 class WorkflowCreate(BaseModel):
     document_id: UUID
@@ -439,3 +447,62 @@ def get_workflow_events(
         }
         for event in events
     ]
+
+@router.post("/draft")
+def draft_follow_up(
+    payload: FollowUpDraftRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    document = authorised_purchase_order(
+        db,
+        user,
+        payload.document_id,
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Approved purchase order not accessible",
+        )
+
+    pages = db.scalars(
+        select(DocumentPage)
+        .where(DocumentPage.document_id == payload.document_id)
+        .order_by(DocumentPage.page_number)
+    ).all()
+
+    graph = build_followup_draft_graph()
+
+    try:
+        result = graph.invoke(
+            {
+                "instruction": payload.instruction,
+                "pages": [
+                    {
+                        "page_number": page.page_number,
+                        "text": page.text,
+                    }
+                    for page in pages
+                ],
+            }
+        )
+    except FollowUpDraftError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    proposal = result["proposal"]
+    page_number = proposal["evidence_page"]
+
+    return {
+        "document_id": payload.document_id,
+        "title": proposal["title"],
+        "description": proposal["description"],
+        "evidence_page": page_number,
+        "source_ref": (
+            f"document:{payload.document_id}:page:{page_number}"
+        ),
+        "requires_confirmation": True,
+    }

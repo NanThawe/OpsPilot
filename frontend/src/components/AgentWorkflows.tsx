@@ -32,6 +32,15 @@ type Props = {
   documents: DocumentOption[];
 };
 
+type FollowUpDraft = {
+  document_id: string;
+  title: string;
+  description: string;
+  evidence_page: number;
+  source_ref: string;
+  requires_confirmation: boolean;
+};
+
 async function apiRequest<T>(
   url: string,
   token: string,
@@ -75,6 +84,8 @@ export default function AgentWorkflows({ token, documents }: Props) {
     null,
   );
   const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [instruction, setInstruction] = useState("");
+  const [draftSource, setDraftSource] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -100,6 +111,48 @@ export default function AgentWorkflows({ token, documents }: Props) {
 
     setWorkflows(data);
   }
+
+  async function generateTaskDraft() {
+  if (!documentId || instruction.trim().length < 10) {
+    setError("Select a document and provide a task instruction.");
+    return;
+  }
+
+  setBusy(true);
+  setError("");
+  setNotice("");
+  setDraftSource("");
+
+  try {
+    const draft = await apiRequest<FollowUpDraft>(
+      "/api/agent/workflows/draft",
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          document_id: documentId,
+          instruction: instruction.trim(),
+        }),
+      },
+    );
+
+    setTitle(draft.title);
+    setDescription(draft.description);
+    setDraftSource(draft.source_ref);
+
+    setNotice(
+      "AI draft generated. Review the details before submitting for approval.",
+    );
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to generate task draft",
+    );
+  } finally {
+    setBusy(false);
+  }
+}
 
   async function handlePropose(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -209,7 +262,12 @@ export default function AgentWorkflows({ token, documents }: Props) {
           Purchase order document
           <select
             value={documentId}
-            onChange={(event) => setDocumentId(event.target.value)}
+            onChange={(event) => {
+                setDocumentId(event.target.value);
+                setTitle("");
+                setDescription("");
+                setDraftSource("");
+                }}
             required
           >
             <option value="">Select a document</option>
@@ -221,6 +279,30 @@ export default function AgentWorkflows({ token, documents }: Props) {
             ))}
           </select>
         </label>
+        <label className="agent-workflows__wide">
+            Describe the follow-up you need
+            <textarea
+                value={instruction}
+                onChange={(event) => setInstruction(event.target.value)}
+                placeholder="Prepare a follow-up to confirm Batch A delivery readiness..."
+                rows={3}
+                maxLength={500}
+            />
+            </label>
+
+            <button
+            type="button"
+            disabled={busy || !documentId || instruction.trim().length < 10}
+            onClick={() => void generateTaskDraft()}
+            >
+            Generate AI draft
+            </button>
+
+            {draftSource && (
+            <p className="agent-workflows__wide">
+                <small>Draft source: {draftSource}</small>
+            </p>
+            )}
 
         <label>
           Task title
