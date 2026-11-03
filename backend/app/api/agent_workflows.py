@@ -21,7 +21,6 @@ from app.db.models import (
     User,
 )
 
-
 router = APIRouter(
     prefix="/agent/workflows",
     tags=["Agent workflows"],
@@ -164,6 +163,10 @@ def workflow_result(db: Session, workflow: AgentWorkflow):
         "document_id": workflow.document_id,
         "title": workflow.title,
         "description": workflow.description,
+        "requested_by_id": workflow.requested_by_id,
+        "reviewed_by_id": workflow.reviewed_by_id,
+        "review_comment": workflow.review_comment,
+        "created_at": workflow.created_at,
         "follow_up_id": follow_up_id,
     }
 
@@ -350,3 +353,89 @@ def get_workflow(
         raise HTTPException(status_code=403, detail="Access denied")
 
     return workflow_result(db, workflow)
+
+@router.get("")
+def list_workflows(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    visible_document_ids = select(Document.id).where(
+        approved_knowledge_scope(user)
+    )
+
+    query = select(AgentWorkflow).where(
+        AgentWorkflow.document_id.in_(visible_document_ids)
+    )
+
+    if not manager_role(user):
+        query = query.where(
+            AgentWorkflow.requested_by_id == user.id
+        )
+
+    workflows = db.scalars(
+        query.order_by(AgentWorkflow.created_at.desc()).limit(50)
+    ).all()
+
+    results = []
+
+    for workflow in workflows:
+        record = workflow_result(db, workflow)
+
+        record["can_review"] = (
+            manager_role(user)
+            and workflow.status == "pending"
+            and workflow.requested_by_id != user.id
+        )
+
+        results.append(record)
+
+    return results
+
+@router.get("/{workflow_id}/events")
+def get_workflow_events(
+    workflow_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    workflow = db.get(AgentWorkflow, workflow_id)
+
+    if workflow is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Workflow not found",
+        )
+
+    if not authorised_purchase_order(
+        db,
+        user,
+        workflow.document_id,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Document access denied",
+        )
+
+    if (
+        workflow.requested_by_id != user.id
+        and not manager_role(user)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied",
+        )
+
+    events = db.scalars(
+        select(AgentAuditEvent)
+        .where(AgentAuditEvent.workflow_id == workflow_id)
+        .order_by(AgentAuditEvent.created_at.asc())
+    ).all()
+
+    return [
+        {
+            "event_type": event.event_type,
+            "actor_id": event.actor_id,
+            "details": event.details,
+            "created_at": event.created_at,
+        }
+        for event in events
+    ]

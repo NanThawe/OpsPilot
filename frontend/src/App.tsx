@@ -11,7 +11,8 @@ import {
 
 import "./App.css";
 import KnowledgeSearch from "./components/KnowledgeSearch";
-
+import RagAssistant from "./components/RagAssistant";
+import AgentWorkflows from "./components/AgentWorkflows";
 
 type Session = {
   token: string;
@@ -390,6 +391,14 @@ function App() {
         <KnowledgeSearch
           token={session.token}
           onOpenDocument={openDocumentFromSearch}
+        />
+        <RagAssistant
+          token={session.token}
+          onOpenDocument={openDocumentFromSearch}
+        />
+        <AgentWorkflows
+          token={session.token}
+          documents={documents}
         />
       </main>
     </div>
