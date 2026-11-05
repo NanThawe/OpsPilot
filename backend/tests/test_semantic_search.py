@@ -1,4 +1,5 @@
 import pytest
+
 from app.services.semantic_search import chunk_text
 
 

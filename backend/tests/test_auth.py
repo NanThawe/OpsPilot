@@ -1,5 +1,8 @@
 from uuid import uuid4
 
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -8,8 +11,6 @@ from app.core.security import (
     verify_password,
 )
 from app.main import app
-from fastapi.testclient import TestClient
-from pydantic import SecretStr
 
 
 def test_password_hashing():

@@ -471,3 +471,39 @@ export async function searchSemanticKnowledge(
 
   return (await response.json()) as SemanticSearchHit[];
 }
+
+export type RagAnswer = {
+  question: string;
+  answer: string;
+  supported: boolean;
+  citations: SemanticSearchHit[];
+  model_name: string;
+};
+
+export async function askKnowledge(
+  token: string,
+  question: string,
+): Promise<RagAnswer> {
+  const response = await fetch("/api/knowledge/ask", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      question: question.trim(),
+    }),
+  });
+
+  if (response.status === 401) {
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Document assistant failed (HTTP ${response.status})`,
+    );
+  }
+
+  return (await response.json()) as RagAnswer;
+}

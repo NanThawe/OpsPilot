@@ -4,18 +4,19 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from app.core.config import settings
-from app.core.dependencies import get_current_user
-from app.db.base import Base
-from app.db.models import Department, Document, User
-from app.db.session import get_db
-from app.main import app
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from reportlab.pdfgen import canvas
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+
+from app.core.config import settings
+from app.core.dependencies import get_current_user
+from app.db.base import Base
+from app.db.models import Department, Document, User
+from app.db.session import get_db
+from app.main import app
 
 
 def make_text_pdf():

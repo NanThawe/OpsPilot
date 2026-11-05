@@ -24,3 +24,9 @@ Thumbs.db
 
 # Locally uploaded documents
 /data/private_documents/
+
+# Generated Python package metadata
+*.egg-info/
+
+# Previous frontend backup
+frontend-vanilla-backup/

@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-import app.services.classification as classification_service
 import pytest
+
+import app.services.classification as classification_service
 from app.core.config import settings
 from app.db.models import DocumentPage
 

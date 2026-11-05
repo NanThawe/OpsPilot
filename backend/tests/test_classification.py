@@ -1,7 +1,12 @@
 from types import SimpleNamespace
 
-import app.api.classification as classification_api
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+import app.api.classification as classification_api
 from app.core.dependencies import get_current_user
 from app.db.base import Base
 from app.db.models import (
@@ -17,10 +22,6 @@ from app.services.classification import (
     ClassificationProposal,
     validate_proposal,
 )
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture

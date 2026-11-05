@@ -1,0 +1,108 @@
+{
+  "document_id": "5f810213-03e9-45b5-8019-9eb7ca5761e4",
+  "cases": [
+    {
+      "id": "agent_summary",
+      "kind": "agent",
+      "query": "Summarise purchase order PO-SYN-2026-002.",
+      "expected_action": "summary",
+      "expected_tool": "get_purchase_order",
+      "required_phrases": [
+        "Pinecrest Industrial Materials",
+        "8210.48"
+      ],
+      "evidence_page": 1
+    },
+    {
+      "id": "agent_first_delivery",
+      "kind": "agent",
+      "query": "When will the first delivery arrive for PO-SYN-2026-002?",
+      "expected_action": "first_delivery",
+      "expected_tool": "get_delivery_milestones",
+      "required_phrases": ["10 Nov 2026"],
+      "evidence_page": 2
+    },
+    {
+      "id": "agent_final_delivery",
+      "kind": "agent",
+      "query": "When is the final scheduled delivery for PO-SYN-2026-002?",
+      "expected_action": "final_delivery",
+      "expected_tool": "get_delivery_milestones",
+      "required_phrases": ["24 Nov 2026"],
+      "evidence_page": 2
+    },
+    {
+      "id": "agent_schedule",
+      "kind": "agent",
+      "query": "Show the complete delivery schedule for PO-SYN-2026-002.",
+      "expected_action": "delivery_schedule",
+      "expected_tool": "get_delivery_milestones",
+      "required_phrases": [
+        "Batch A",
+        "10 Nov 2026",
+        "Batch B",
+        "24 Nov 2026"
+      ],
+      "evidence_page": 2
+    },
+    {
+      "id": "agent_payment_terms",
+      "kind": "agent",
+      "query": "What are the payment terms for PO-SYN-2026-002?",
+      "expected_action": "knowledge",
+      "expected_tool": "search_company_knowledge",
+      "required_phrases": ["Net 30"],
+      "evidence_page": 2
+    },
+    {
+      "id": "agent_unsupported_action",
+      "kind": "agent",
+      "query": "Send an email to the supplier for PO-SYN-2026-002.",
+      "expected_action": "clarify",
+      "expected_tool": "none",
+      "required_phrases": []
+    },
+    {
+      "id": "rag_first_delivery",
+      "kind": "rag",
+      "query": "When will the first delivery arrive for PO-SYN-2026-002?",
+      "expected_supported": true,
+      "required_phrases": ["10 Nov 2026"],
+      "evidence_page": 2
+    },
+    {
+      "id": "rag_missing_bank_account",
+      "kind": "rag",
+      "query": "What is the supplier bank account number for PO-SYN-2026-002?",
+      "expected_supported": false,
+      "required_phrases": []
+    },
+    {
+      "id": "draft_batch_a",
+      "kind": "draft",
+      "query": "Prepare a follow-up task to confirm Batch A delivery readiness, schedule and equipment quantities.",
+      "required_phrases": [
+        "10 Nov 2026",
+        "10 scanners",
+        "3 label printers"
+      ],
+      "evidence_page": 2
+    },
+    {
+      "id": "draft_batch_b",
+      "kind": "draft",
+      "query": "Prepare a follow-up task to confirm Batch B delivery readiness and equipment quantities.",
+      "required_phrases": [
+        "24 Nov 2026",
+        "12 battery packs"
+      ],
+      "evidence_page": 2
+    },
+    {
+      "id": "finance_access_denied",
+      "kind": "finance_draft",
+      "query": "Prepare a follow-up for Batch A.",
+      "expected_status": 403
+    }
+  ]
+}

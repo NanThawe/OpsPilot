@@ -1,12 +1,13 @@
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
+
 from app.services.purchase_order_reviews import (
     PurchaseOrderReviewRequest,
     can_approve_purchase_order,
     reviewer_can_review,
 )
-from pydantic import ValidationError
 
 
 def test_only_passed_orders_can_be_approved():

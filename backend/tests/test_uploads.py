@@ -3,17 +3,18 @@ from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
+from pypdf import PdfWriter
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
 from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.db.base import Base
 from app.db.models import Department, Document, User
 from app.db.session import get_db
 from app.main import app
-from fastapi.testclient import TestClient
-from pypdf import PdfWriter
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 
 
 def make_test_pdf():

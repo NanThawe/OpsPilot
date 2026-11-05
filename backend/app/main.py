@@ -4,14 +4,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.access import router as access_router
 from app.api.agent import router as agent_router
+from app.api.agent_workflows import router as workflow_router
 from app.api.auth import router as auth_router
 from app.api.classification import router as classification_router
 from app.api.documents import router as documents_router
 from app.api.extraction import router as extraction_router
 from app.api.knowledge import router as knowledge_router
 from app.db.session import get_engine
-
-from app.api.agent_workflows import router as workflow_router
 
 app = FastAPI(
     title="OpsPilot API",

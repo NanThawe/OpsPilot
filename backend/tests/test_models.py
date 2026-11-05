@@ -1,6 +1,7 @@
+from sqlalchemy import CheckConstraint
+
 from app.db.base import Base
 from app.db.models import Department, User
-from sqlalchemy import CheckConstraint
 
 
 def test_models_are_registered():
