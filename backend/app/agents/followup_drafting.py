@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import TypedDict
 
@@ -7,6 +8,9 @@ from ollama import Client, ResponseError
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
+from app.core.observability import TraceTimer, log_event
+
+logger = logging.getLogger("opspilot.followup")
 
 MAX_CONTEXT_CHARS = 12000
 
@@ -196,22 +200,27 @@ def generate_draft(state: DraftState):
         )
 
     try:
-        response = client.chat(
+        with TraceTimer(
+            logger,
+            "followup_generation",
             model=settings.ollama_model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"EMPLOYEE REQUEST:\n{state['instruction']}\n\n"
-                        f"DOCUMENT EVIDENCE:\n{state['context']}"
-                        f"{verified_facts}"
-                    ),
-                },
-            ],
-            format=DraftProposal.model_json_schema(),
-            options={"temperature": 0},
-        )
+        ):
+            response = client.chat(
+                model=settings.ollama_model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"EMPLOYEE REQUEST:\n{state['instruction']}\n\n"
+                            f"DOCUMENT EVIDENCE:\n{state['context']}"
+                            f"{verified_facts}"
+                        ),
+                    },
+                ],
+                format=DraftProposal.model_json_schema(),
+                options={"temperature": 0},
+            )
         proposal = DraftProposal.model_validate_json(response.message.content or "")
     except (ResponseError, httpx.HTTPError, ValidationError) as exc:
         raise FollowUpDraftError("Local follow-up drafting failed") from exc
@@ -244,6 +253,16 @@ def verify_draft(state: DraftState):
             proposal["title"] = f"Confirm Batch {milestone['label']} delivery readiness"
 
     DraftProposal.model_validate(proposal)
+
+    log_event(
+        logger,
+        "followup_verified",
+        evidence_page=proposal["evidence_page"],
+        requested_batch=_requested_batch(
+            state.get("instruction", "")
+        ),
+    )
+
     return {"proposal": proposal}
 
 

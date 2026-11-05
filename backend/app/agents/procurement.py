@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Any, Literal, TypedDict
 
@@ -14,12 +15,15 @@ from app.api.knowledge import (
     ask_documents,
 )
 from app.core.config import settings
+from app.core.observability import TraceTimer, log_event
 from app.db.models import (
     Document,
     DocumentClassification,
     PurchaseOrderExtraction,
     User,
 )
+
+logger = logging.getLogger("opspilot.agent")
 
 
 class ProcurementAgentError(Exception):
@@ -90,21 +94,26 @@ def plan_request(question: str) -> AgentPlan:
             timeout=180.0,
         )
 
-        response = client.chat(
+        with TraceTimer(
+            logger,
+            "agent_planning",
             model=settings.ollama_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": PLANNING_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": question,
-                },
-            ],
-            format=AgentPlan.model_json_schema(),
-            options={"temperature": 0},
-        )
+        ):
+            response = client.chat(
+                model=settings.ollama_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": PLANNING_PROMPT,
+                    },
+                    {
+                        "role": "user",
+                        "content": question,
+                    },
+                ],
+                format=AgentPlan.model_json_schema(),
+                options={"temperature": 0},
+            )
 
         return AgentPlan.model_validate_json(
             response.message.content or ""
@@ -208,15 +217,29 @@ def run_procurement_agent(
             and plan.po_number.casefold()
             not in state["question"].casefold()
         ):
+            log_event(
+                logger,
+                "agent_route",
+                action="clarify",
+                has_po_number=False,
+            )
             return {
                 "action": "clarify",
                 "po_number": None,
             }
 
+        log_event(
+            logger,
+            "agent_route",
+            action=plan.action,
+            has_po_number=bool(plan.po_number),
+        )
+
         return {
             "action": plan.action,
             "po_number": plan.po_number,
         }
+    
 
     def summary_node(state: AgentState) -> dict:
         po_number = state.get("po_number")
@@ -228,11 +251,16 @@ def run_procurement_agent(
                 "citations": [],
             }
 
-        record = get_authorised_purchase_order(
-            db,
-            user,
-            po_number,
-        )
+        with TraceTimer(
+            logger,
+            "agent_tool",
+            tool="get_purchase_order",
+        ):
+            record = get_authorised_purchase_order(
+                db,
+                user,
+                po_number,
+            )
 
         if record is None:
             return {
@@ -281,11 +309,16 @@ def run_procurement_agent(
                 "citations": [],
             }
 
-        record = get_authorised_purchase_order(
-            db,
-            user,
-            po_number,
-        )
+        with TraceTimer(
+            logger,
+            "agent_tool",
+            tool="get_delivery_milestones",
+        ):
+            record = get_authorised_purchase_order(
+                db,
+                user,
+                po_number,
+            )
 
         if record is None:
             return {
@@ -381,13 +414,18 @@ def run_procurement_agent(
         }
 
     def knowledge_node(state: AgentState) -> dict:
-        response = ask_documents(
-            payload=AskRequest(
-                question=state["question"]
-            ),
-            db=db,
-            user=user,
-        )
+        with TraceTimer(
+            logger,
+            "agent_tool",
+            tool="search_company_knowledge",
+        ):
+            response = ask_documents(
+                payload=AskRequest(
+                    question=state["question"]
+                ),
+                db=db,
+                user=user,
+            )
 
         return {
             "answer": response.answer,

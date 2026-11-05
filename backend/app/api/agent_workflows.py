@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from app.agents.followup_drafting import (
 )
 from app.api.classification import get_current_user, get_db
 from app.api.knowledge import approved_knowledge_scope
+from app.core.observability import log_event
 from app.db.models import (
     AgentAuditEvent,
     AgentWorkflow,
@@ -25,6 +27,8 @@ from app.db.models import (
     ProcurementFollowUp,
     User,
 )
+
+logger = logging.getLogger("opspilot.workflow")
 
 router = APIRouter(
     prefix="/agent/workflows",
@@ -143,6 +147,12 @@ def execute_follow_up(
     workflow.status = "completed"
     db.commit()
 
+    log_event(
+        logger,
+        "workflow_completed",
+        workflow_id=str(workflow.id),
+    )
+
 
 def workflow_graph(db: Session, user: User, checkpointer):
     return build_approval_graph(
@@ -215,6 +225,13 @@ def create_workflow(
     )
 
     db.commit()
+
+    log_event(
+        logger,
+        "workflow_proposed",
+        workflow_id=str(workflow.id),
+        document_id=str(workflow.document_id),
+    )
 
     config = {
         "configurable": {
@@ -302,6 +319,13 @@ def decide_workflow(
         )
 
         db.commit()
+
+        log_event(
+            logger,
+            "workflow_decision",
+            workflow_id=str(workflow.id),
+            decision=desired_status,
+        )
 
     elif (
         workflow.status != desired_status

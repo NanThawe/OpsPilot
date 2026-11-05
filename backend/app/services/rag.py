@@ -1,4 +1,9 @@
+import logging
 from collections.abc import Sequence
+
+from app.core.observability import log_event
+
+logger = logging.getLogger("opspilot.rag")
 
 SYSTEM_PROMPT = """
 You are OpsPilot, an internal procurement and operations assistant.
@@ -68,6 +73,12 @@ def build_rag_context(
             f"Content:\n{content}"
         )
 
+    log_event(
+        logger,
+        "rag_context_built",
+        source_count=len(sources),
+    )
+
     return "\n\n".join(blocks)
 
 
@@ -78,12 +89,34 @@ def validate_source_ids(
     """Reject nonexistent citations and remove duplicates."""
 
     if not source_ids:
+        log_event(
+            logger,
+            "rag_citation_validation_failed",
+            reason="missing_citations",
+            source_count=source_count,
+        )
         raise ValueError("Answer requires citations")
 
     if any(
         source_id < 1 or source_id > source_count
         for source_id in source_ids
     ):
+        log_event(
+            logger,
+            "rag_citation_validation_failed",
+            reason="invalid_source_id",
+            source_count=source_count,
+            citation_count=len(source_ids),
+        )
         raise ValueError("Invalid citation reference")
 
-    return list(dict.fromkeys(source_ids))
+    validated = list(dict.fromkeys(source_ids))
+
+    log_event(
+        logger,
+        "rag_citations_validated",
+        source_count=source_count,
+        citation_count=len(validated),
+    )
+
+    return validated
