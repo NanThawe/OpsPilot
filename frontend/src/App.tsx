@@ -13,6 +13,7 @@ import "./App.css";
 import KnowledgeSearch from "./components/KnowledgeSearch";
 import RagAssistant from "./components/RagAssistant";
 import AgentWorkflows from "./components/AgentWorkflows";
+import { DashboardSummary } from "./components/DashboardSummary";
 
 type Session = {
   token: string;
@@ -54,6 +55,7 @@ function App() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] =
   useState<string | null>(null);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
   async function loadDocuments(token: string) {
     setDocumentsLoading(true);
@@ -61,6 +63,7 @@ function App() {
     try {
       const result = await fetchDocuments(token);
       setDocuments(result);
+      setDashboardRefreshKey((current) => current + 1);
       setError(null);
     } catch (err) {
       setError(
@@ -129,6 +132,7 @@ function App() {
     setPassword("");
     setError(null);
     setSelectedDocumentId(null);
+    setDashboardRefreshKey(0);
   }
 
   if (!session) {
@@ -198,15 +202,6 @@ function App() {
     );
   }
 
-  const readyCount = documents.filter(
-    (document) => document.status === "ready",
-  ).length;
-
-  const extractedCount = documents.filter(
-    (document) =>
-      document.extraction_status === "completed",
-  ).length;
-
   const selectedDocument =
   documents.find(
     (document) => document.id === selectedDocumentId,
@@ -252,7 +247,7 @@ function App() {
       
 
             <p className="muted">
-              View documents available to your account.
+              Monitor document workload, approvals, exceptions and AI readiness.
             </p>
           </div>
 
@@ -261,28 +256,10 @@ function App() {
           </div>
         </header>
 
-        <section className="stats-grid">
-          <article className="stat-card">
-            <div className="stat-label">Visible documents</div>
-            <div className="stat-number">
-              {documents.length}
-            </div>
-          </article>
-
-          <article className="stat-card">
-            <div className="stat-label">Ready</div>
-            <div className="stat-number">
-              {readyCount}
-            </div>
-          </article>
-
-          <article className="stat-card">
-            <div className="stat-label">Text extracted</div>
-            <div className="stat-number">
-              {extractedCount}
-            </div>
-          </article>
-        </section>
+        <DashboardSummary
+          token={session.token}
+          refreshKey={dashboardRefreshKey}
+        />
 
         <UploadDocument
           token={session.token}

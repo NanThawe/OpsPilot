@@ -42,6 +42,10 @@ from app.services.purchase_orders import (
     validate_purchase_order,
 )
 
+from fastapi import BackgroundTasks
+from app.services.auto_indexing import auto_index_document
+
+
 router = APIRouter(
     prefix="/documents",
     tags=["AI Classification"],
@@ -641,6 +645,7 @@ def review_purchase_order_endpoint(
     payload: PurchaseOrderReviewRequest,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
 ):
     document = db.get(Document, document_id)
 
@@ -741,6 +746,12 @@ def review_purchase_order_endpoint(
     db.add(review)
     db.commit()
     db.refresh(review)
+
+    if review.decision == "approved":
+        background_tasks.add_task(
+            auto_index_document,
+            review.document_id,
+        )
 
     return review
 
