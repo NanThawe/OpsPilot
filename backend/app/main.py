@@ -10,6 +10,7 @@ from app.api.agent import router as agent_router
 from app.api.agent_workflows import router as workflow_router
 from app.api.auth import router as auth_router
 from app.api.classification import router as classification_router
+from app.api.document_delete import router as document_delete_router
 from app.api.documents import router as documents_router
 from app.api.extraction import router as extraction_router
 from app.api.knowledge import router as knowledge_router
@@ -38,6 +39,8 @@ app.include_router(classification_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
 app.include_router(workflow_router)
+app.include_router(document_delete_router)
+
 
 
 @app.get("/health", tags=["System"])

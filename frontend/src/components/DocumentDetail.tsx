@@ -14,7 +14,7 @@ import {
   type DocumentRecord,
   type PurchaseOrderResult,
 } from "../api";
-
+import { DeleteDocumentButton } from "./DeleteDocumentButton";
 type Props = {
   token: string;
   user: ApiUser;
@@ -371,6 +371,7 @@ export function DocumentDetail({
                   </table>
                 </div>
               </div>
+              
             )}
 
                 {purchaseOrder.validation.issues.length > 0 && (
@@ -440,6 +441,16 @@ export function DocumentDetail({
                 await loadDetails();
               }}
             />
+
+          <DeleteDocumentButton
+            token={token}
+            documentId={document.id}
+            documentTitle={document.title}
+            onDeleted={async () => {
+              onClose();
+              await onUpdated();
+            }}
+          />
         </>
       )}
     </section>

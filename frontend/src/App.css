@@ -508,3 +508,29 @@ summary {
 .review-form .primary-button {
   justify-self: start;
 } 
+
+.delete-document-control {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.danger-button {
+  border: 1px solid #b42318;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #b42318;
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #fff5f4;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
