@@ -1,23 +1,79 @@
 services:
   db:
     image: pgvector/pgvector:pg16
-
-    ports:
-      - "127.0.0.1:55432:5432"
-
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-
+      POSTGRES_DB: ${POSTGRES_DB:-opspilot}
+      POSTGRES_USER: ${POSTGRES_USER:-opspilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opspilot_dev}
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-opspilot} -d ${POSTGRES_DB:-opspilot}"
+        ]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_dev}@db:5432/${POSTGRES_DB:-opspilot}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+      alembic upgrade head &&
+      python backend/scripts/setup_agent_checkpoints.py
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_dev}@db:5432/${POSTGRES_DB:-opspilot}
+
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-development-secret}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+
+      AI_PROVIDER: ollama
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b-instruct}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+      DOCUMENT_STORAGE_DIR: /app/data/private_documents
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - document_data:/app/data/private_documents
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
 
 volumes:
   postgres_data:
+  document_data:
