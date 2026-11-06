@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { UploadDocument } from "./components/UploadDocument";
 import { DocumentDetail } from "./components/DocumentDetail";
 import {
@@ -56,6 +56,38 @@ function App() {
   const [selectedDocumentId, setSelectedDocumentId] =
   useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [restoringSession, setRestoringSession] = useState(true);
+
+  useEffect(() => {
+  const token = sessionStorage.getItem("opspilot_token");
+
+  if (!token) {
+    setRestoringSession(false);
+    return;
+  }
+
+  async function restoreSession() {
+    try {
+      const user = await fetchProfile(token!);
+      const restoredDocuments = await fetchDocuments(token!);
+
+      setSession({
+        token: token!,
+        user,
+      });
+
+      setDocuments(restoredDocuments);
+      setDashboardRefreshKey((current) => current + 1);
+    } catch {
+      sessionStorage.removeItem("opspilot_token");
+      setSession(null);
+    } finally {
+      setRestoringSession(false);
+    }
+  }
+
+  restoreSession();
+}, []);
 
   async function loadDocuments(token: string) {
     setDocumentsLoading(true);
@@ -85,6 +117,11 @@ function App() {
     try {
       const auth = await login(email.trim(), password);
       const user = await fetchProfile(auth.access_token);
+      
+      sessionStorage.setItem(
+        "opspilot_token",
+        auth.access_token,
+      );
 
       setSession({
         token: auth.access_token,
@@ -102,7 +139,9 @@ function App() {
     } finally {
       setBusy(false);
     }
+    
   }
+  
   function openDocumentFromSearch(documentId: string) {
   const exists = documents.some(
     (item) => item.id === documentId,
@@ -133,8 +172,15 @@ function App() {
     setError(null);
     setSelectedDocumentId(null);
     setDashboardRefreshKey(0);
+    sessionStorage.removeItem("opspilot_token");
   }
-
+  if (restoringSession) {
+    return (
+      <main className="login-page">
+        <p>Restoring session...</p>
+      </main>
+    );
+  }
   if (!session) {
     return (
       <main className="login-page">
