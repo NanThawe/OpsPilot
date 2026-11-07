@@ -166,7 +166,7 @@ def extract_purchase_order(
     try:
         client = OllamaClient(
             host=settings.ollama_base_url,
-            timeout=180.0,
+            timeout=300.0,
         )
 
         response = client.chat(
