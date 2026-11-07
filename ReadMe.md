@@ -15,6 +15,13 @@
 </p>
 
 ---
+## Demo Video
+[![Watch the OpsPilot Demo](https://github.com/user-attachments/assets/a4dce9a0-56a3-4bfd-9b0b-d5ef1a141045)](https://youtu.be/7tU7dBtOqWE)
+
+Click the photo above to watch the complete workflow: document ingestion, AI extraction,
+validation, approvals, RAG, and agent-driven follow-ups.
+
+<img width="400" alt="flagged discrepancy" src="https://github.com/user-attachments/assets/0233e831-02be-42cb-8ed6-c569f98a2edd"/>
 
 ## Overview
 
