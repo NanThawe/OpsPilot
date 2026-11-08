@@ -1,3 +1,5 @@
+import logging
+import re
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -12,12 +14,18 @@ from pydantic import BaseModel, Field, ValidationError
 from app.core.config import settings
 from app.db.models import DocumentPage
 
+logger = logging.getLogger("opspilot.purchase_orders")
+
 MAX_INPUT_CHARS = 16000
 CENT = Decimal("0.01")
 MAX_NUMBER = Decimal(1000000000000)
 
 
 class PurchaseOrderServiceError(Exception):
+    pass
+
+
+class PurchaseOrderExtractionError(PurchaseOrderServiceError):
     pass
 
 
@@ -38,9 +46,9 @@ class DeliveryMilestone(BaseModel):
 
 class PurchaseOrderProposal(BaseModel):
     po_number: str | None = None
-    vendor: str | None = None
-    buyer: str | None = None
-    currency: str | None = None
+    vendor: str | None = Field(default=None, max_length=160)
+    buyer: str | None = Field(default=None, max_length=160)
+    currency: str | None = Field(default=None, max_length=10)
 
     line_items: list[PurchaseOrderLine] = Field(default_factory=list)
 
@@ -145,6 +153,17 @@ SOURCE PAGE REFERENCES:
 - For a one-page document labelled [PAGE 1], return [1].
 - Every line item's page_number must identify its source page.
 - Never use page number 0 or invent page numbers.
+
+Copy values exactly from the document.
+
+For vendor, return only the supplier company name.
+Do not include supplier IDs, addresses, country names, or other text.
+
+Do not repeat characters, digits, words, or phrases.
+If a field cannot be extracted confidently, return null.
+
+PO numbers must be copied exactly as written.
+Do not modify punctuation or insert additional hyphens.
 """
 
 
@@ -163,12 +182,23 @@ def extract_purchase_order(
             "Document text is too long for this MVP extractor"
         )
 
+    # For recognised, text-based PO layouts, extract source-backed values
+    # deterministically. This avoids a small LLM omitting fields that are
+    # explicitly printed or looping while generating long JSON strings.
+    source_proposal = reconcile_purchase_order_from_source(
+        PurchaseOrderProposal(), pages
+    )
+    if _complete_source_extraction(source_proposal, pages):
+        return resolve_source_pages(source_proposal, pages)
+
+    # Keep the LLM path for layouts that are not fully understood by the
+    # deterministic parser. The existing financial validator remains the
+    # authority on whether the extraction may be approved.
     try:
         client = OllamaClient(
             host=settings.ollama_base_url,
-            timeout=300.0,
+            timeout=180.0,
         )
-
         response = client.chat(
             model=settings.ollama_model,
             messages=[
@@ -176,35 +206,30 @@ def extract_purchase_order(
                 {"role": "user", "content": document_text},
             ],
             format=PurchaseOrderProposal.model_json_schema(),
-            options={"temperature": 0},
+            think=False,
+            options={
+                "temperature": 0,
+                "num_ctx": 4096,
+                "num_predict": 1024,
+                "repeat_penalty": 1.15,
+                "repeat_last_n": 128,
+            },
         )
-
         proposal = PurchaseOrderProposal.model_validate_json(
             response.message.content or ""
         )
-
-    except (
-        OllamaResponseError,
-        httpx.HTTPError,
-        ValidationError,
-    ) as exc:
-        raise PurchaseOrderServiceError(
+    except (OllamaResponseError, httpx.HTTPError, ValidationError) as exc:
+        # Do not write document contents or model responses to application logs.
+        logger.warning(
+            "purchase_order_llm_extraction_failed: %s",
+            type(exc).__name__,
+        )
+        raise PurchaseOrderExtractionError(
             "Local purchase order extraction failed"
         ) from exc
 
-    # Correct fields using the original PDF text.
-    proposal = reconcile_purchase_order_from_source(
-        proposal,
-        pages,
-    )
-
-    # Verify page references against the actual document.
-    proposal = resolve_source_pages(
-        proposal,
-        pages,
-    )
-
-    return proposal
+    proposal = reconcile_purchase_order_from_source(proposal, pages)
+    return resolve_source_pages(proposal, pages)
 
 
 def _number(value: str | None) -> Decimal | None:
@@ -222,51 +247,72 @@ def _number(value: str | None) -> Decimal | None:
     return number
 
 
-# works only for the synthetic purchase order layout used in the MVP demo. It is not a general-purpose parser for arbitrary purchase orders.
+# These source parsers are deliberately limited to identifiable, text-based
+# tables. Unknown/ambiguous layouts still require LLM extraction and review.
 def parse_flattened_ordered_items(
     text: str,
     page_number: int,
 ) -> list[PurchaseOrderLine]:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-
+    lines = _lines(text)
     labels = [line.casefold() for line in lines]
 
-    if "ordered items" not in labels:
+    if "ordered items" in labels:
+        start_label, end_header, fields_per_item = "ordered items", "amount", 5
+    elif "line items" in labels:
+        start_label, end_header, fields_per_item = (
+            "line items", "printed amount", 4
+        )
+    else:
         return []
 
-    start = labels.index("ordered items")
-
+    start = labels.index(start_label)
     try:
-        header_end = labels.index("amount", start + 1)
-        table_end = labels.index("subtotal", header_end + 1)
+        header_end = labels.index(end_header, start + 1)
     except ValueError:
         return []
 
-    values = lines[header_end + 1 : table_end]
-
-    # This layout has five values per item:
-    # code, description, quantity, unit price, line total.
-    if not values or len(values) % 5 != 0:
+    subtotal_index = next(
+        (
+            i for i in range(header_end + 1, len(lines))
+            if re.match(r"^subtotal(?:\s*:|\s*$)", lines[i], flags=re.IGNORECASE)
+        ),
+        None,
+    )
+    if subtotal_index is None:
         return []
 
-    items = []
+    values = lines[header_end + 1 : subtotal_index]
+    if not values or len(values) % fields_per_item != 0:
+        return []
 
-    for index in range(0, len(values), 5):
-        code, description, quantity, unit_price, total = values[index : index + 5]
+    items: list[PurchaseOrderLine] = []
+    for index in range(0, len(values), fields_per_item):
+        row = values[index : index + fields_per_item]
+        if fields_per_item == 5:
+            code, description, quantity, unit_price, total = row
+            description = f"{code}: {description}"
+        else:
+            description, quantity, unit_price, total = row
 
         qty = _number(quantity)
         price = _number(unit_price)
-        printed_total = _number(total)
-
-        if qty is None or qty <= 0 or price is None or printed_total is None:
+        printed = _number(total)
+        if (
+            not description.strip()
+            or qty is None
+            or qty <= 0
+            or price is None
+            or price < 0
+            or printed is None
+        ):
             return []
 
         items.append(
             PurchaseOrderLine(
-                description=f"{code}: {description}",
-                quantity=quantity,
-                unit_price=unit_price,
-                printed_line_total=total,
+                description=description,
+                quantity=str(qty),
+                unit_price=_money(price),
+                printed_line_total=_money(printed),
                 page_number=page_number,
             )
         )
@@ -283,17 +329,38 @@ def _value_after_label(
     label: str,
     startswith: bool = False,
 ) -> str | None:
-    for index, line in enumerate(lines[:-1]):
-        matches = (
-            line.casefold().startswith(label.casefold())
-            if startswith
-            else line.casefold() == label.casefold()
+    """Read both `LABEL\nvalue` and `Label: value` PDF text layouts."""
+    for index, line in enumerate(lines):
+        pattern = (
+            rf"^{re.escape(label)}(?:\s*:\s*|\s+)(.+)$"
+            if not startswith
+            else rf"^{re.escape(label)}(?:(?:\s*:\s*|\s+)(.+))?$"
         )
-
-        if matches:
+        match = re.fullmatch(pattern, line, flags=re.IGNORECASE)
+        if match:
+            candidate = match.group(1) if match.lastindex else None
+            if candidate and candidate.strip():
+                return candidate.strip()
+        if line.casefold() == label.casefold() and index + 1 < len(lines):
             return lines[index + 1]
-
     return None
+
+
+_MONEY_LITERAL = re.compile(
+    r"^(?:SGD\s*|S\$\s*|\$\s*)?"
+    r"([+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)$",
+    flags=re.IGNORECASE,
+)
+
+
+def _literal_amount(text: str | None) -> str | None:
+    if text is None:
+        return None
+    match = _MONEY_LITERAL.fullmatch(text.strip())
+    if match is None:
+        return None
+    amount = _number(match.group(1))
+    return _money(amount) if amount is not None else None
 
 
 def _source_amount(
@@ -301,78 +368,95 @@ def _source_amount(
     label: str,
     startswith: bool = False,
 ) -> str | None:
-    raw = _value_after_label(
-        lines,
-        label,
-        startswith=startswith,
+    """Read a printed amount, never infer it from arithmetic."""
+    optional_parentheticals = r"(?:\s*\([^)]*\))*" if startswith else ""
+    pattern = re.compile(
+        rf"^{re.escape(label)}{optional_parentheticals}\s*:?[ \t]*(.*)$",
+        flags=re.IGNORECASE,
     )
+    for index, line in enumerate(lines):
+        match = pattern.fullmatch(line)
+        if not match:
+            continue
+        suffix = match.group(1).strip()
+        if suffix:
+            amount = _literal_amount(suffix)
+            if amount is not None:
+                return amount
+        elif index + 1 < len(lines):
+            amount = _literal_amount(lines[index + 1])
+            if amount is not None:
+                return amount
 
-    number = _number(raw)
-
-    if number is None:
-        return None
-
-    return _money(number)
+    # A two/three-line grand-total heading is common after PDF flattening:
+    # TOTAL\nPAYABLE\n(SGD)\n7,564.60
+    if label.casefold() == "total payable":
+        for index in range(len(lines) - 2):
+            if (
+                lines[index].casefold() == "total"
+                and lines[index + 1].casefold() == "payable"
+            ):
+                offset = 2
+                if (
+                    index + offset < len(lines)
+                    and re.fullmatch(r"\([A-Z]{3}\)", lines[index + offset])
+                ):
+                    offset += 1
+                if index + offset < len(lines):
+                    return _literal_amount(lines[index + offset])
+    return None
 
 
 def _parse_delivery_milestones(
     pages: Sequence[DocumentPage],
 ) -> list[DeliveryMilestone]:
-    milestones = []
-
+    milestones: list[DeliveryMilestone] = []
+    batch = re.compile(
+        r"^(Batch\s+[A-Za-z0-9]+)\s+"
+        r"(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})$",
+        flags=re.IGNORECASE,
+    )
+    section_headers = {
+        "DELIVERY LOCATION", "DELIVERY LOCATION AND RECEIVING RULES",
+        "RECEIVING RULES", "PAYMENT AND APPROVAL", "DOCUMENT LINKAGE",
+        "ORDER CONDITIONS", "PAYMENT TERMS",
+    }
     for page in pages:
         lines = _lines(page.text)
-
-        if "STAGED DELIVERY SCHEDULE" not in lines:
+        marker = next(
+            (i for i, line in enumerate(lines)
+             if line.casefold() == "staged delivery schedule"),
+            None,
+        )
+        if marker is None:
             continue
 
-        try:
-            start = lines.index("DELIVERABLES") + 1
-        except ValueError:
-            continue
-
-        try:
-            end = lines.index(
-                "DELIVERY LOCATION AND RECEIVING RULES",
-                start,
-            )
-        except ValueError:
-            end = len(lines)
-
-        index = start
-
-        while index < end:
-            if not lines[index].casefold().startswith("batch "):
-                index += 1
-                continue
-
-            if index + 1 >= end:
+        current_name: str | None = None
+        current_date: str | None = None
+        deliverables: list[str] = []
+        for line in lines[marker + 1 :]:
+            if line.upper() in section_headers:
                 break
-
-            name = lines[index]
-            due_date = lines[index + 1]
-
-            next_index = index + 2
-            deliverables = []
-
-            while next_index < end and not lines[next_index].casefold().startswith(
-                "batch "
-            ):
-                deliverables.append(lines[next_index])
-                next_index += 1
-
-            if deliverables:
-                milestones.append(
-                    DeliveryMilestone(
-                        name=name,
-                        due_date=due_date,
+            match = batch.fullmatch(line)
+            if match:
+                if current_name and deliverables:
+                    milestones.append(DeliveryMilestone(
+                        name=current_name,
+                        due_date=current_date or "",
                         deliverables="; ".join(deliverables),
                         page_number=page.page_number,
-                    )
-                )
-
-            index = next_index
-
+                    ))
+                current_name, current_date = match.groups()
+                deliverables = []
+            elif current_name:
+                deliverables.append(line)
+        if current_name and deliverables:
+            milestones.append(DeliveryMilestone(
+                name=current_name,
+                due_date=current_date or "",
+                deliverables="; ".join(deliverables),
+                page_number=page.page_number,
+            ))
     return milestones
 
 
@@ -380,80 +464,67 @@ def reconcile_purchase_order_from_source(
     proposal: PurchaseOrderProposal,
     pages: Sequence[DocumentPage],
 ) -> PurchaseOrderProposal:
-    # Prefer the page containing the actual order table.
     order_page = next(
-        (page for page in pages if "ORDERED ITEMS" in page.text),
+        (page for page in pages
+         if re.search(r"(?im)^\s*(ORDERED ITEMS|LINE ITEMS)\s*$", page.text)),
         None,
     )
 
     if order_page is not None:
         lines = _lines(order_page.text)
-
         header_fields = {
-            "po_number": "PO NUMBER",
-            "buyer": "BUYER / BILL TO",
-            "vendor": "SUPPLIER",
-            "currency": "CURRENCY",
+            "po_number": ("PO NUMBER",),
+            "buyer": ("BUYER / BILL TO", "BUYER"),
+            "vendor": ("SUPPLIER",),
+            "currency": ("CURRENCY",),
         }
-
-        for field_name, label in header_fields.items():
-            value = _value_after_label(lines, label)
-
-            if value:
-                setattr(proposal, field_name, value)
+        for field_name, aliases in header_fields.items():
+            for label in aliases:
+                value = _value_after_label(lines, label)
+                if value:
+                    if field_name == "vendor":
+                        # The fixture may append a supplier reference in brackets.
+                        value = re.sub(
+                            r"\s*\(SYN-SUP-[A-Za-z0-9-]+\)$", "", value,
+                            flags=re.IGNORECASE,
+                        ).strip()
+                    setattr(proposal, field_name, value)
+                    break
 
         amount_fields = {
-            "subtotal": "Subtotal",
-            "tax_amount": "GST",
-            "total_amount": "TOTAL PAYABLE",
+            "subtotal": ("Subtotal",),
+            "tax_amount": ("GST", "Tax"),
+            "total_amount": ("Grand Total", "TOTAL PAYABLE"),
+            "shipping_amount": ("Shipping", "Shipping amount"),
         }
+        for field_name, aliases in amount_fields.items():
+            for label in aliases:
+                value = _source_amount(
+                    lines, label, startswith=(label in {"GST", "Tax", "TOTAL PAYABLE"})
+                )
+                if value is not None:
+                    setattr(proposal, field_name, value)
+                    break
 
-        for field_name, label in amount_fields.items():
-            value = _source_amount(
-                lines,
-                label,
-                startswith=(label != "Subtotal"),
-            )
+        discount_raw = _source_amount(lines, "Volume discount", startswith=True)
+        if discount_raw is not None:
+            proposal.discount_amount = _money(abs(_number(discount_raw)))
 
-            if value is not None:
-                setattr(proposal, field_name, value)
-
-        # The PDF prints a negative discount.
-        # Our validator expects a positive amount to subtract.
-        raw_discount = _value_after_label(
-            lines,
-            "Volume discount",
-            startswith=True,
-        )
-
-        discount = _number(raw_discount)
-
-        if discount is not None:
-            proposal.discount_amount = _money(abs(discount))
-
-    # Recover item rows from the source instead of relying
-    # on the model's interpretation of flattened table text.
-    parsed_items = []
-
+    parsed_items: list[PurchaseOrderLine] = []
     for page in pages:
-        parsed_items.extend(
-            parse_flattened_ordered_items(
-                page.text,
-                page.page_number,
-            )
-        )
+        parsed_items.extend(parse_flattened_ordered_items(page.text, page.page_number))
 
     if parsed_items:
         proposal.line_items = parsed_items
+    elif order_page is not None:
+        # We recognised the header but not the rows. Do not allow unverified
+        # LLM-created line items to produce a false "passed" validation.
+        proposal.line_items = []
 
-    # Capture the second page's staged deliveries.
     parsed_milestones = _parse_delivery_milestones(pages)
-
     if parsed_milestones:
         proposal.delivery_milestones = parsed_milestones
 
-    # Reject obviously merged supplier fields when the
-    # source parser could not recover a clean value.
     if proposal.vendor and (
         len(proposal.vendor) > 160
         or "supplier reference:" in proposal.vendor.casefold()
@@ -463,6 +534,45 @@ def reconcile_purchase_order_from_source(
         )
 
     return proposal
+
+
+def _complete_source_extraction(
+    proposal: PurchaseOrderProposal,
+    pages: Sequence[DocumentPage],
+) -> bool:
+    """Only bypass Ollama when all required printed facts are verified."""
+    if not all((proposal.po_number, proposal.vendor, proposal.currency,
+                proposal.subtotal, proposal.total_amount, proposal.line_items)):
+        return False
+    if not all(
+        _number(item.quantity) is not None
+        and _number(item.unit_price) is not None
+        and _number(item.printed_line_total) is not None
+        for item in proposal.line_items
+    ):
+        return False
+    order_page = next(
+        (page for page in pages if re.search(
+            r"(?im)^\s*(ORDERED ITEMS|LINE ITEMS)\s*$", page.text
+        )),
+        None,
+    )
+    if order_page is None:
+        return False
+    labels = _lines(order_page.text)
+    if any(re.match(r"^GST(?:\s*\([^)]*\))?\s*:?", line, re.IGNORECASE)
+           for line in labels) and proposal.tax_amount is None:
+        return False
+    if any(re.match(r"^Volume discount\b", line, re.IGNORECASE)
+           for line in labels) and proposal.discount_amount is None:
+        return False
+    return not (
+        any(
+            re.match(r"^Shipping(?: amount)?\b", line, re.IGNORECASE)
+            for line in labels
+        )
+        and proposal.shipping_amount is None
+    )
 
 
 def _money(value: Decimal) -> str:
